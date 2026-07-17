@@ -29,18 +29,34 @@ const BACKENDS = {
 
 type BackendKey = keyof typeof BACKENDS;
 
+const API_KEY_STORAGE = 'hoth-api-key';
+
 export function App() {
   const [backend, setBackend] = useState<BackendKey>('a');
   const [sessionId, setSessionId] = useState<string>();
   const [phase, setPhase] = useState<'idle' | 'preparing' | 'ready' | 'error'>('idle');
   const [detail, setDetail] = useState('');
+  // API key is entered at runtime (never baked into the build) and persisted
+  // locally so it survives reloads. It rides every request as
+  // Authorization: Bearer <key> — via the FlueClient `token` for chat + SSE,
+  // and via an explicit header on the session-setup fetches below.
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem(API_KEY_STORAGE) ?? '');
+
+  function updateApiKey(value: string) {
+    setApiKey(value);
+    localStorage.setItem(API_KEY_STORAGE, value);
+    // Changing the key invalidates the current session's clients/stream.
+    setSessionId(undefined);
+    setPhase('idle');
+    setDetail('');
+  }
 
   const clients = useMemo(
     () => ({
-      a: createFlueClient({ baseUrl: BACKENDS.a.baseUrl }),
-      b: createFlueClient({ baseUrl: BACKENDS.b.baseUrl }),
+      a: createFlueClient({ baseUrl: BACKENDS.a.baseUrl, token: apiKey }),
+      b: createFlueClient({ baseUrl: BACKENDS.b.baseUrl, token: apiKey }),
     }),
-    [],
+    [apiKey],
   );
 
   async function newSession(nextBackend: BackendKey) {
@@ -60,7 +76,7 @@ export function App() {
           : '{}';
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
         body,
       });
       const payload = await response.json().catch(() => ({}));
@@ -83,6 +99,13 @@ export function App() {
       <header>
         <h1>Hoth Trip Planner</h1>
         <div className="controls">
+          <input
+            type="password"
+            className="apikey"
+            value={apiKey}
+            placeholder="API key"
+            onChange={(event) => updateApiKey(event.target.value.trim())}
+          />
           <select
             value={backend}
             onChange={(event) => {
@@ -99,13 +122,14 @@ export function App() {
               </option>
             ))}
           </select>
-          <button onClick={() => newSession(backend)} disabled={phase === 'preparing'}>
+          <button onClick={() => newSession(backend)} disabled={phase === 'preparing' || !apiKey}>
             {phase === 'preparing' ? 'Preparing…' : 'New session'}
           </button>
         </div>
         <p className={`status status-${phase}`}>
+          {!apiKey ? 'Enter your API key to begin. ' : ''}
           {sessionId ? `session ${sessionId} · ` : ''}
-          {detail || 'Start a new session to chat.'}
+          {detail || (apiKey ? 'Start a new session to chat.' : '')}
         </p>
       </header>
       {sessionId && phase === 'ready' ? (

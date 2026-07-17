@@ -11,17 +11,22 @@ import { getSandbox } from '@cloudflare/sandbox';
 import { flue } from '@flue/runtime/routing';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { buildOracleCommand, OracleError, kvSecretBroker, isValidSessionId } from '@hoth/core';
+import { apiKeyGuard, buildSkillCheckCommand, SkillCheckError, kvSecretBroker, isValidSessionId } from '@hoth/core';
 
 type Env = {
   Sandbox: DurableObjectNamespace;
   SECRETS: KVNamespace;
   STATIC_BEARER: string;
+  API_TOKEN: string;
 };
 
 const app = new Hono<{ Bindings: Env }>();
 
 app.use('*', cors());
+// Every route except /health requires Authorization: Bearer <API_TOKEN>.
+// Fail-closed if API_TOKEN is unset (503). This covers the flue() agent/stream
+// routes too, since the guard runs before app.route('/', flue()).
+app.use('*', apiKeyGuard());
 
 app.get('/health', (c) => c.json({ ok: true, backend: 'a', delivery: 'image-baked' }));
 
@@ -38,18 +43,19 @@ app.post('/sessions/:id/provision', async (c) => {
   return c.json({ ok: true, backend: 'a', sessionId: id, containerId });
 });
 
-// Deterministic acceptance oracle (plan §13): drives the fixed core commands
-// in this session's sandbox, isolating the A/B comparison from LLM
-// nondeterminism. NOT arbitrary exec — the command is built server-side from
-// a bounded op + strictly validated params (see @hoth/core buildOracleCommand).
-app.post('/sessions/:id/oracle', async (c) => {
+// Deterministic skill-check (plan §13): drives the fixed core commands in this
+// session's sandbox, isolating the A/B comparison from LLM nondeterminism. NOT
+// arbitrary exec — the command is built server-side from a bounded op + strictly
+// validated params (see @hoth/core buildSkillCheckCommand). Behind the API-key
+// guard like every other route.
+app.post('/sessions/:id/skill-check', async (c) => {
   const id = c.req.param('id');
   if (!isValidSessionId(id)) return c.json({ error: 'invalid session id' }, 400);
   let command: string;
   try {
-    command = buildOracleCommand(await c.req.json());
+    command = buildSkillCheckCommand(await c.req.json());
   } catch (err) {
-    if (err instanceof OracleError) return c.json({ error: err.message }, 422);
+    if (err instanceof SkillCheckError) return c.json({ error: err.message }, 422);
     throw err;
   }
   const sandbox = getSandbox(c.env.Sandbox, id);

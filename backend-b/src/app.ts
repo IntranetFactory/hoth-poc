@@ -18,9 +18,10 @@ import { flue } from '@flue/runtime/routing';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import {
+  apiKeyGuard,
   BundleValidationError,
-  buildOracleCommand,
-  OracleError,
+  buildSkillCheckCommand,
+  SkillCheckError,
   isValidSessionId,
   kvSecretBroker,
   provisionSkill,
@@ -31,6 +32,7 @@ import {
 type Env = {
   Sandbox: DurableObjectNamespace;
   STORE: KVNamespace;
+  API_TOKEN: string;
 };
 
 const BUNDLE_TTL_SECONDS = 24 * 60 * 60;
@@ -38,6 +40,10 @@ const BUNDLE_TTL_SECONDS = 24 * 60 * 60;
 const app = new Hono<{ Bindings: Env }>();
 
 app.use('*', cors());
+// Every route except /health requires Authorization: Bearer <API_TOKEN>.
+// Fail-closed if API_TOKEN is unset (503). Covers the flue() agent/stream
+// routes too, since the guard runs before app.route('/', flue()).
+app.use('*', apiKeyGuard());
 
 app.get('/health', (c) => c.json({ ok: true, backend: 'b', delivery: 'dynamic-bundle' }));
 
@@ -92,19 +98,19 @@ app.post('/sessions/:id/skills', async (c) => {
   });
 });
 
-// Deterministic acceptance oracle (plan §13): NOT arbitrary exec — the command
-// is built server-side from a bounded op + validated params. Before running it
+// Deterministic skill-check (plan §13): NOT arbitrary exec — the command is
+// built server-side from a bounded op + validated params. Before running it
 // this replays EXACTLY the agent initializer's cold-container path — read
 // stored bundle, absent→write reconstruction — so cold-recovery is testable
-// without an LLM turn.
-app.post('/sessions/:id/oracle', async (c) => {
+// without an LLM turn. Behind the API-key guard like every other route.
+app.post('/sessions/:id/skill-check', async (c) => {
   const id = c.req.param('id');
   if (!isValidSessionId(id)) return c.json({ error: 'invalid session id' }, 400);
   let command: string;
   try {
-    command = buildOracleCommand(await c.req.json<Record<string, unknown>>());
+    command = buildSkillCheckCommand(await c.req.json<Record<string, unknown>>());
   } catch (err) {
-    if (err instanceof OracleError) return c.json({ error: err.message }, 422);
+    if (err instanceof SkillCheckError) return c.json({ error: err.message }, 422);
     throw err;
   }
 

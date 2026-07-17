@@ -8,7 +8,8 @@ export {
 } from './bundle.js';
 export { makeTar, makeTarGz, toBase64 } from './tar.js';
 export { provisionSkill, SKILLS_DIR } from './provision.js';
-export { buildOracleCommand, OracleError } from './oracle.js';
+export { buildSkillCheckCommand, SkillCheckError } from './skill-check.js';
+export { apiKeyGuard } from './auth.js';
 export { ECHO_HOST, DEFAULT_MODEL, SESSION_ID_RE, isValidSessionId } from './config.js';
 export {
   kvSecretBroker,

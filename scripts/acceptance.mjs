@@ -2,11 +2,11 @@
 /**
  * Acceptance tests (plan §11 step 8, §13) against the DEPLOYED backends.
  * Every check names a concrete oracle; LLM nondeterminism is isolated by
- * driving the deterministic core (the bounded /oracle route) directly.
+ * driving the deterministic core (the bounded /skill-check route) directly.
  *
- * Usage:
- *   node scripts/acceptance.mjs
- *   A_URL=https://... B_URL=https://... node scripts/acceptance.mjs
+ * Requires the shared API key (both backends are behind the guard):
+ *   API_TOKEN=<key> node scripts/acceptance.mjs
+ *   API_TOKEN=<key> A_URL=https://... B_URL=https://... node scripts/acceptance.mjs
  */
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -16,6 +16,12 @@ import { fileURLToPath } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const A_URL = process.env.A_URL ?? 'https://hoth-poc-backend-a.ma532.workers.dev';
 const B_URL = process.env.B_URL ?? 'https://hoth-poc-backend-b.ma532.workers.dev';
+const API_TOKEN = process.env.API_TOKEN;
+if (!API_TOKEN) {
+  console.error('API_TOKEN env var is required (both backends are behind the API-key guard).');
+  process.exit(2);
+}
+const AUTH = { authorization: `Bearer ${API_TOKEN}` };
 
 const bundle = JSON.parse(readFileSync(join(here, '..', 'backend-a', 'dist-bundle', 'hoth-trip-planner.bundle.json'), 'utf-8'));
 
@@ -32,7 +38,7 @@ function uuid() { return crypto.randomUUID(); }
 async function post(base, path, body) {
   const res = await fetch(`${base}${path}`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...AUTH },
     body: JSON.stringify(body ?? {}),
   });
   const text = await res.text();
@@ -41,7 +47,7 @@ async function post(base, path, body) {
 }
 
 async function del(base, id) {
-  await fetch(`${base}/sessions/${id}`, { method: 'DELETE' }).catch(() => {});
+  await fetch(`${base}/sessions/${id}`, { method: 'DELETE', headers: { ...AUTH } }).catch(() => {});
 }
 
 const FIXED = { op: 'opening-times', sites: ['Echo Base Thermal Springs'], from: '2026-08-01', to: '2026-08-03' };
@@ -49,9 +55,15 @@ const FIXED = { op: 'opening-times', sites: ['Echo Base Thermal Springs'], from:
 async function main() {
   console.log(`A: ${A_URL}\nB: ${B_URL}\n`);
 
-  // Health
+  // Health (public, no auth)
   const [ha, hb] = await Promise.all([fetch(`${A_URL}/health`).then((r) => r.json()), fetch(`${B_URL}/health`).then((r) => r.json())]);
   check('health', 'both backends healthy', ha.ok && hb.ok, `A=${ha.delivery} B=${hb.delivery}`);
+
+  // --- Auth: protected routes reject missing/wrong key ---------------------
+  const noKey = await fetch(`${A_URL}/sessions/${uuid()}/provision`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+  check('auth', 'A rejects request with no API key (401)', noKey.status === 401, `status ${noKey.status}`);
+  const badKey = await fetch(`${B_URL}/sessions/${uuid()}/skills`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer wrong' }, body: '{}' });
+  check('auth', 'B rejects request with wrong API key (401)', badKey.status === 401, `status ${badKey.status}`);
 
   // --- C1: A is OOTB / static (no ingest route) ---------------------------
   const aIngest = await post(A_URL, `/sessions/${uuid()}/skills`, { bundle });
@@ -67,7 +79,7 @@ async function main() {
   check('B-ingest', 'B bundle ingest + reconstruct OK', bIngest.status === 200 && bIngest.json.reconstructed === true, JSON.stringify(bIngest.json).slice(0, 140));
 
   // --- Clean-base positive control: B live sandbox now has the file set ---
-  const bCount = await post(B_URL, `/sessions/${bId}/oracle`, { op: 'count-skill-files' });
+  const bCount = await post(B_URL, `/sessions/${bId}/skill-check`, { op: 'count-skill-files' });
   const bFileCount = Number((bCount.json.stdout ?? '').trim());
   check('clean-base', 'B live sandbox has expected file count after injection', bFileCount === Object.keys(bundle.files).length, `count=${bFileCount}`);
 
@@ -79,8 +91,8 @@ async function main() {
     bundleHashes[`./${rel}`] = createHash('sha256').update(content).digest('hex');
   }
   const [aHash, bHash] = await Promise.all([
-    post(A_URL, `/sessions/${aId}/oracle`, { op: 'hash-skill' }),
-    post(B_URL, `/sessions/${bId}/oracle`, { op: 'hash-skill' }),
+    post(A_URL, `/sessions/${aId}/skill-check`, { op: 'hash-skill' }),
+    post(B_URL, `/sessions/${bId}/skill-check`, { op: 'hash-skill' }),
   ]);
   const parseHashes = (stdout) => Object.fromEntries((stdout ?? '').trim().split('\n').filter(Boolean).map((line) => {
     const [h, p] = line.trim().split(/\s+/);
@@ -94,8 +106,8 @@ async function main() {
 
   // --- C4: same result A vs B (the thesis) — deterministic exec oracle -----
   const [aRun, bRun] = await Promise.all([
-    post(A_URL, `/sessions/${aId}/oracle`, FIXED),
-    post(B_URL, `/sessions/${bId}/oracle`, FIXED),
+    post(A_URL, `/sessions/${aId}/skill-check`, FIXED),
+    post(B_URL, `/sessions/${bId}/skill-check`, FIXED),
   ]);
   const aOut = normalizeTimes(aRun.json.stdout);
   const bOut = normalizeTimes(bRun.json.stdout);
@@ -106,8 +118,8 @@ async function main() {
   // --- C4 egress trace: the echo upstream saw this session's bearer, the
   //     container sent none ------------------------------------------------
   const [aEcho, bEcho] = await Promise.all([
-    post(A_URL, `/sessions/${aId}/oracle`, { ...FIXED, debugEcho: true }),
-    post(B_URL, `/sessions/${bId}/oracle`, { ...FIXED, debugEcho: true }),
+    post(A_URL, `/sessions/${aId}/skill-check`, { ...FIXED, debugEcho: true }),
+    post(B_URL, `/sessions/${bId}/skill-check`, { ...FIXED, debugEcho: true }),
   ]);
   const aHdr = echoHeaders(aEcho.json.stdout);
   const bHdr = echoHeaders(bEcho.json.stdout);
@@ -119,8 +131,8 @@ async function main() {
   const b2Id = uuid();
   await post(B_URL, `/sessions/${b2Id}/skills`, { bundle, tenantTag: 'tenant-beta' });
   const [b1e, b2e] = await Promise.all([
-    post(B_URL, `/sessions/${bId}/oracle`, { ...FIXED, debugEcho: true }),
-    post(B_URL, `/sessions/${b2Id}/oracle`, { ...FIXED, debugEcho: true }),
+    post(B_URL, `/sessions/${bId}/skill-check`, { ...FIXED, debugEcho: true }),
+    post(B_URL, `/sessions/${b2Id}/skill-check`, { ...FIXED, debugEcho: true }),
   ]);
   const h1 = echoHeaders(b1e.json.stdout), h2 = echoHeaders(b2e.json.stdout);
   check('C2', 'concurrent B sessions carry different bearers', !!h1?.authorization && !!h2?.authorization && h1.authorization !== h2.authorization);
@@ -139,7 +151,7 @@ async function main() {
   // Re-ingest re-adds a bearer, so instead test the pure no-mapping path via A:
   // craft an A session that never provisioned → no bearer mapping.
   const aNoBearer = uuid();
-  const aFailClosed = await post(A_URL, `/sessions/${aNoBearer}/oracle`, { ...FIXED, debugEcho: true });
+  const aFailClosed = await post(A_URL, `/sessions/${aNoBearer}/skill-check`, { ...FIXED, debugEcho: true });
   const failStdout = aFailClosed.json.stdout ?? '';
   check('C5', 'egress fails closed without a bearer mapping (403 from proxy)', /403|egress denied/.test(failStdout) || aFailClosed.json.exitCode !== 0, snippet(failStdout));
 

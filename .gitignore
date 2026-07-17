@@ -8,3 +8,4 @@ dist-bundle/
 .wrangler/
 frontend/src/generated/
 *.tsbuildinfo
+.api-token

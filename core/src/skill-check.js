@@ -1,9 +1,10 @@
 /**
- * Deterministic acceptance oracle (plan §13). A BOUNDED set of fixed commands
- * built server-side from validated structured params — never a client-supplied
- * shell string. This is what lets the harness drive the core directly and
+ * Deterministic skill-check (plan §13). A BOUNDED set of fixed commands built
+ * server-side from validated structured params — never a client-supplied shell
+ * string. This is what lets the acceptance harness drive the core directly and
  * isolate the A/B skill-delivery comparison from LLM nondeterminism, without
- * shipping an arbitrary-exec surface.
+ * shipping an arbitrary-exec surface. (In test-oracle terms this IS the
+ * oracle; the route is named skill-check because that's what it inspects.)
  *
  * Each op maps to one hard-coded command template. The only interpolated
  * values are strictly validated (site names, ISO dates), and are passed to the
@@ -25,17 +26,17 @@ const SKILL_DIR = `${SKILLS_DIR}/${SKILL_NAME}`;
  * @param {{ op?: string, sites?: string[], from?: string, to?: string, debugEcho?: boolean }} req
  * @returns {string}
  */
-export function buildOracleCommand(req) {
+export function buildSkillCheckCommand(req) {
   const op = req?.op;
   switch (op) {
     case 'opening-times': {
       const sites = req.sites;
       if (!Array.isArray(sites) || sites.length === 0 || sites.length > 8) {
-        throw new OracleError('sites must be 1-8 site names');
+        throw new SkillCheckError('sites must be 1-8 site names');
       }
-      for (const s of sites) if (typeof s !== 'string' || !SITE_RE.test(s)) throw new OracleError(`invalid site name: ${s}`);
-      if (!DATE_RE.test(req.from ?? '')) throw new OracleError('from must be YYYY-MM-DD');
-      if (!DATE_RE.test(req.to ?? '')) throw new OracleError('to must be YYYY-MM-DD');
+      for (const s of sites) if (typeof s !== 'string' || !SITE_RE.test(s)) throw new SkillCheckError(`invalid site name: ${s}`);
+      if (!DATE_RE.test(req.from ?? '')) throw new SkillCheckError('from must be YYYY-MM-DD');
+      if (!DATE_RE.test(req.to ?? '')) throw new SkillCheckError('to must be YYYY-MM-DD');
       // Args are single-quoted; site names are already restricted to
       // [A-Za-z0-9 ] so no quote/metachar can appear.
       const sitesArg = sites.join(',');
@@ -49,13 +50,13 @@ export function buildOracleCommand(req) {
       // Clean-base / positive-control file count (plan §13). A *file* count.
       return `find '${SKILLS_DIR}' -type f 2>/dev/null | wc -l`;
     default:
-      throw new OracleError(`unknown op: ${String(op)}`);
+      throw new SkillCheckError(`unknown op: ${String(op)}`);
   }
 }
 
-export class OracleError extends Error {
+export class SkillCheckError extends Error {
   constructor(message) {
-    super(`oracle request invalid: ${message}`);
-    this.name = 'OracleError';
+    super(`skill-check request invalid: ${message}`);
+    this.name = 'SkillCheckError';
   }
 }
