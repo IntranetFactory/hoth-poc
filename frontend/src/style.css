@@ -1,0 +1,21 @@
+* { box-sizing: border-box; }
+body { margin: 0; font-family: system-ui, sans-serif; background: #f0f4f8; color: #1a202c; }
+main { max-width: 760px; margin: 0 auto; padding: 1.5rem; }
+header h1 { margin: 0 0 0.75rem; font-size: 1.4rem; }
+.controls { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+select, button, input { font: inherit; padding: 0.45rem 0.7rem; border: 1px solid #cbd5e0; border-radius: 6px; background: #fff; }
+button { cursor: pointer; background: #2b6cb0; color: #fff; border-color: #2b6cb0; }
+button:disabled { opacity: 0.5; cursor: default; }
+.status { font-size: 0.82rem; color: #4a5568; word-break: break-all; }
+.status-error { color: #c53030; }
+.chat { margin-top: 1rem; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem; }
+.messages { display: flex; flex-direction: column; gap: 0.6rem; max-height: 55vh; overflow-y: auto; margin-bottom: 0.75rem; }
+.msg { padding: 0.5rem 0.75rem; border-radius: 8px; }
+.msg strong { display: block; font-size: 0.72rem; text-transform: uppercase; color: #718096; margin-bottom: 0.2rem; }
+.msg-user { background: #ebf8ff; align-self: flex-end; max-width: 85%; }
+.msg-assistant { background: #f7fafc; align-self: flex-start; max-width: 95%; }
+.msg p { margin: 0.25rem 0; white-space: pre-wrap; }
+.tool { font-size: 0.8rem; }
+.tool pre { overflow-x: auto; background: #edf2f7; padding: 0.5rem; border-radius: 6px; }
+form { display: flex; gap: 0.5rem; }
+form input { flex: 1; }

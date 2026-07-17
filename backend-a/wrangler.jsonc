@@ -1,0 +1,33 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "hoth-poc-backend-a",
+  "compatibility_date": "2026-06-01",
+  "compatibility_flags": ["nodejs_compat"],
+  // Flue generates FlueRegistry + FlueHothAgent; HothSandbox is app-owned.
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["FlueRegistry", "FlueHothAgent"] },
+    { "tag": "v2", "new_sqlite_classes": ["HothSandbox"] }
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "Sandbox", "class_name": "HothSandbox" }]
+  },
+  // NOTE: placement stays "smart" (default) — "targeted" silently breaks
+  // outboundByHost header injection (sandbox-sdk#661, plan §7).
+  "containers": [
+    {
+      "class_name": "HothSandbox",
+      "image": "./Dockerfile",
+      "instance_type": "lite"
+    }
+  ],
+  "kv_namespaces": [
+    { "binding": "SECRETS", "id": "1ba83abe61344fa3aec54e1134c91c4d" }
+  ],
+  // Workers AI binding — required for cloudflare/* models (no API key needed).
+  "ai": { "binding": "AI" },
+  "vars": {
+    // A is a static agent: one fixed bearer for all sessions (plan §6/§13 C1).
+    "STATIC_BEARER": "hoth-static-bearer-backend-a",
+    "MODEL": "cloudflare/@cf/moonshotai/kimi-k2.6"
+  }
+}

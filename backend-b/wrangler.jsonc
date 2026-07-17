@@ -1,0 +1,30 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "hoth-poc-backend-b",
+  "compatibility_date": "2026-06-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["FlueRegistry", "FlueHothAgent"] },
+    { "tag": "v2", "new_sqlite_classes": ["HothSandbox"] }
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "Sandbox", "class_name": "HothSandbox" }]
+  },
+  // placement stays "smart" (default) — "targeted" breaks outboundByHost
+  // header injection (sandbox-sdk#661, plan §7).
+  "containers": [
+    {
+      "class_name": "HothSandbox",
+      "image": "./Dockerfile",
+      "instance_type": "lite"
+    }
+  ],
+  "kv_namespaces": [
+    { "binding": "STORE", "id": "6799aa42675b47148d246feda057a0e5" }
+  ],
+  // Workers AI binding — required for cloudflare/* models (no API key needed).
+  "ai": { "binding": "AI" },
+  "vars": {
+    "MODEL": "cloudflare/@cf/moonshotai/kimi-k2.6"
+  }
+}

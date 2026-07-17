@@ -1,0 +1,10 @@
+node_modules/
+dist/
+dist-bundle/
+.flue-vite/
+.flue-vite.wrangler.jsonc
+.dev.vars
+.env
+.wrangler/
+frontend/src/generated/
+*.tsbuildinfo

@@ -1,0 +1,11 @@
+{
+  "name": "@hoth/core",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "description": "Host-agnostic Flue-core seams: bundle format/validation, skill reconstruction, egress/secret broker interface. No Cloudflare imports.",
+  "exports": {
+    ".": "./src/index.js",
+    "./node": "./src/node.js"
+  }
+}
