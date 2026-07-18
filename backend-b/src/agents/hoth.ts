@@ -14,6 +14,7 @@ import { getSandbox } from '@cloudflare/sandbox';
 import { defineAgent, type AgentRouteHandler } from '@flue/runtime';
 import { cloudflareSandbox } from '@flue/runtime/cloudflare';
 import { provisionSkill, resolveSandboxBinding, validateBundle } from '@hoth/core';
+import { commentOnIssue, gitHubRefFromConversation } from '../channels/github';
 import { MODEL_SPECIFIER } from '../llm';
 
 type Env = {
@@ -24,6 +25,22 @@ type Env = {
 export const route: AgentRouteHandler = async (_c, next) => next();
 
 export default defineAgent<Env>(async ({ id, env }) => {
+  // GitHub-channel conversations (id is a channel conversation key, one per
+  // issue) answer in the issue thread via the comment tool. No sandbox or
+  // bundle: nothing to provision, and a container per issue would be waste.
+  const issueRef = gitHubRefFromConversation(id);
+  if (issueRef) {
+    return {
+      model: MODEL_SPECIFIER,
+      tools: [commentOnIssue(issueRef)],
+      instructions:
+        `You are the Hoth travel assistant answering GitHub issues on ${issueRef.owner}/${issueRef.repo}. ` +
+        'Each input is a JSON event: a newly opened issue or a follow-up comment on the issue bound to this conversation. ' +
+        'Answer the question or request it contains, then post your answer with the comment_on_github_issue tool. ' +
+        'Post exactly one comment per event; Markdown is supported. If the request is unclear, post a comment asking for clarification.',
+    };
+  }
+
   const raw = await env.STORE.get(`bundle:${id}`);
 
   // The bundle names the toolchain it needs; that selects the Sandbox binding

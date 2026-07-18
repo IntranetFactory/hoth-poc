@@ -28,6 +28,7 @@ import {
   resolveSandboxBinding,
   validateBundle,
 } from '@hoth/core';
+import { channel } from './channels/github';
 
 type Env = {
   Sandbox: DurableObjectNamespace;
@@ -40,6 +41,14 @@ const BUNDLE_TTL_SECONDS = 24 * 60 * 60;
 const app = new Hono<{ Bindings: Env }>();
 
 app.use('*', cors());
+
+// GitHub webhook (POST /channels/github/webhook). Registered BEFORE the API
+// key guard: GitHub can't send our bearer — the channel authenticates each
+// delivery itself via X-Hub-Signature-256 over the raw body.
+for (const route of channel.routes) {
+  app.on(route.method, `/channels/github${route.path}`, route.handler);
+}
+
 // Every route except /health requires Authorization: Bearer <API_TOKEN>.
 // Fail-closed if API_TOKEN is unset (503). Covers the flue() agent/stream
 // routes too, since the guard runs before app.route('/', flue()).
