@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C c:/dev/hoth-poc log --oneline -20)",
+      "Bash(sed 's/=.*/=<redacted>/' backend-a/.dev.vars)",
+      "Bash(sed 's/=.*/=<redacted>/' backend-b/.dev.vars)",
+      "Bash(sed 's/=.*/=<redacted>/' frontend/.env.production)",
+      "Bash(find node_modules/.pnpm/@flue+runtime@1.0.0-beta.9__a7a172e4869e9a05a338937137b978fb/node_modules/@flue/runtime/dist -name *.js)",
+      "Bash(find node_modules/.pnpm/@flue+runtime@1.0.0-beta.9__a7a172e4869e9a05a338937137b978fb/node_modules/@flue/runtime/docs -iname *model* -o -iname *provider*)",
+      "Bash(env)",
+      "Bash(pnpm deploy:*)"
+    ]
+  }
+}

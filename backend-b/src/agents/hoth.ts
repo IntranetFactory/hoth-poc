@@ -13,12 +13,12 @@
 import { getSandbox } from '@cloudflare/sandbox';
 import { defineAgent, type AgentRouteHandler } from '@flue/runtime';
 import { cloudflareSandbox } from '@flue/runtime/cloudflare';
-import { DEFAULT_MODEL, provisionSkill, resolveSandboxBinding, validateBundle } from '@hoth/core';
+import { provisionSkill, resolveSandboxBinding, validateBundle } from '@hoth/core';
+import { MODEL_SPECIFIER } from '../llm';
 
 type Env = {
   Sandbox: DurableObjectNamespace;
   STORE: KVNamespace;
-  MODEL?: string;
 };
 
 export const route: AgentRouteHandler = async (_c, next) => next();
@@ -41,7 +41,7 @@ export default defineAgent<Env>(async ({ id, env }) => {
   }
 
   return {
-    model: env.MODEL || DEFAULT_MODEL,
+    model: MODEL_SPECIFIER,
     sandbox: cloudflareSandbox(sandbox),
     cwd: '/workspace',
     instructions:

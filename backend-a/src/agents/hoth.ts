@@ -9,17 +9,16 @@
 import { getSandbox } from '@cloudflare/sandbox';
 import { defineAgent, type AgentRouteHandler } from '@flue/runtime';
 import { cloudflareSandbox } from '@flue/runtime/cloudflare';
-import { DEFAULT_MODEL } from '@hoth/core';
+import { MODEL_SPECIFIER } from '../llm';
 
 type Env = {
   Sandbox: DurableObjectNamespace;
-  MODEL?: string;
 };
 
 export const route: AgentRouteHandler = async (_c, next) => next();
 
 export default defineAgent<Env>(({ id, env }) => ({
-  model: env.MODEL || DEFAULT_MODEL,
+  model: MODEL_SPECIFIER,
   sandbox: cloudflareSandbox(getSandbox(env.Sandbox, id)),
   cwd: '/workspace',
   instructions:

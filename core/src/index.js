@@ -10,7 +10,7 @@ export { makeTar, makeTarGz, toBase64 } from './tar.js';
 export { provisionSkill, SKILLS_DIR } from './provision.js';
 export { buildSkillCheckCommand, SkillCheckError } from './skill-check.js';
 export { apiKeyGuard } from './auth.js';
-export { ECHO_HOST, DEFAULT_MODEL, SESSION_ID_RE, isValidSessionId } from './config.js';
+export { ECHO_HOST, DEFAULT_LLM, configureLlm, SESSION_ID_RE, isValidSessionId } from './config.js';
 export {
   kvSecretBroker,
   injectAndForward,
