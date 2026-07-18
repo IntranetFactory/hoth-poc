@@ -14,6 +14,7 @@
  * reused id is rejected (plan §6/§13 C5).
  */
 import { getSandbox } from '@cloudflare/sandbox';
+import { getRun, listRuns } from '@flue/runtime';
 import { flue } from '@flue/runtime/routing';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
@@ -24,6 +25,11 @@ import {
   SkillCheckError,
   isValidSessionId,
   kvSecretBroker,
+  putSessionIndex,
+  removeSessionIndex,
+  adminCollections,
+  listCollectionRecords,
+  readCollectionRecord,
   provisionSkill,
   resolveSandboxBinding,
   validateBundle,
@@ -55,6 +61,25 @@ for (const route of channel.routes) {
 app.use('*', apiKeyGuard());
 
 app.get('/health', (c) => c.json({ ok: true, backend: 'b', delivery: 'dynamic-bundle' }));
+
+// Read-only data browser (behind the API-key guard). Presents every backing
+// store as a generic collection so the frontend is a plain entities -> records
+// -> record tree. Never mutates. `deps` injects the KV binding and the Flue run
+// registry API (getRun/listRuns) into the host-agnostic core resolver.
+const adminDeps = (c: { env: Env }) => ({ kv: c.env.STORE, listRuns: () => listRuns({ limit: 100 }), getRun });
+app.get('/admin/collections', (c) => c.json({ backend: 'b', collections: adminCollections('STORE') }));
+app.get('/admin/collections/:cid/records', async (c) => {
+  const result = await listCollectionRecords(c.req.param('cid'), adminDeps(c));
+  if (!result) return c.json({ error: 'unknown collection' }, 404);
+  return c.json(result);
+});
+app.get('/admin/collections/:cid/record', async (c) => {
+  const id = c.req.query('id');
+  if (!id) return c.json({ error: 'id query param required' }, 400);
+  const record = await readCollectionRecord(c.req.param('cid'), id, adminDeps(c));
+  if (!record) return c.json({ error: 'not found' }, 404);
+  return c.json(record);
+});
 
 app.post('/sessions/:id/skills', async (c) => {
   const id = c.req.param('id');
@@ -90,6 +115,17 @@ app.post('/sessions/:id/skills', async (c) => {
   const bearer = `hoth-b-bearer-${id.slice(0, 8)}-${crypto.randomUUID()}`;
   await c.env.STORE.put(`bundle:${id}`, JSON.stringify(bundle), { expirationTtl: BUNDLE_TTL_SECONDS });
   await kvSecretBroker(c.env.STORE).put(containerId, bearer, tenantTag);
+
+  // Index the session so the data browser can enumerate conversations without
+  // knowing ids upfront (best-effort — never fail provisioning over the index).
+  await putSessionIndex(c.env.STORE, id, {
+    backend: 'b',
+    containerId,
+    tenantTag,
+    skillName: bundle.skillName,
+    version: bundle.version,
+    createdAt: new Date().toISOString(),
+  }).catch(() => {});
 
   // Pre-warm + eager reconstruction (plan §8/§15 P1). The initializer will
   // find the dir present and no-op; on a later cold container it re-creates.
@@ -142,6 +178,7 @@ app.delete('/sessions/:id', async (c) => {
   const containerId = c.env.Sandbox.idFromName(id).toString();
   await kvSecretBroker(c.env.STORE).remove(containerId);
   await c.env.STORE.delete(`bundle:${id}`);
+  await removeSessionIndex(c.env.STORE, id).catch(() => {});
   return c.json({ ok: true });
 });
 

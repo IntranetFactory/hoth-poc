@@ -8,10 +8,22 @@
  * (the frontend awaits the 2xx before chatting).
  */
 import { getSandbox } from '@cloudflare/sandbox';
+import { getRun, listRuns } from '@flue/runtime';
 import { flue } from '@flue/runtime/routing';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { apiKeyGuard, buildSkillCheckCommand, SkillCheckError, kvSecretBroker, isValidSessionId } from '@hoth/core';
+import {
+  apiKeyGuard,
+  buildSkillCheckCommand,
+  SkillCheckError,
+  kvSecretBroker,
+  isValidSessionId,
+  putSessionIndex,
+  removeSessionIndex,
+  adminCollections,
+  listCollectionRecords,
+  readCollectionRecord,
+} from '@hoth/core';
 
 type Env = {
   Sandbox: DurableObjectNamespace;
@@ -30,6 +42,25 @@ app.use('*', apiKeyGuard());
 
 app.get('/health', (c) => c.json({ ok: true, backend: 'a', delivery: 'image-baked' }));
 
+// Read-only data browser (behind the API-key guard). Presents every backing
+// store as a generic collection so the frontend is a plain entities -> records
+// -> record tree. Never mutates. `deps` injects the KV binding and the Flue run
+// registry API (getRun/listRuns) into the host-agnostic core resolver.
+const adminDeps = (c: { env: Env }) => ({ kv: c.env.SECRETS, listRuns: () => listRuns({ limit: 100 }), getRun });
+app.get('/admin/collections', (c) => c.json({ backend: 'a', collections: adminCollections('SECRETS') }));
+app.get('/admin/collections/:cid/records', async (c) => {
+  const result = await listCollectionRecords(c.req.param('cid'), adminDeps(c));
+  if (!result) return c.json({ error: 'unknown collection' }, 404);
+  return c.json(result);
+});
+app.get('/admin/collections/:cid/record', async (c) => {
+  const id = c.req.query('id');
+  if (!id) return c.json({ error: 'id query param required' }, 400);
+  const record = await readCollectionRecord(c.req.param('cid'), id, adminDeps(c));
+  if (!record) return c.json({ error: 'not found' }, 404);
+  return c.json(record);
+});
+
 app.post('/sessions/:id/provision', async (c) => {
   const id = c.req.param('id');
   if (!isValidSessionId(id)) return c.json({ error: 'invalid session id' }, 400);
@@ -39,6 +70,10 @@ app.post('/sessions/:id/provision', async (c) => {
   const containerId = c.env.Sandbox.idFromName(id).toString();
   const broker = kvSecretBroker(c.env.SECRETS);
   await broker.put(containerId, c.env.STATIC_BEARER, 'static-a');
+
+  // Index the session so the data browser can enumerate conversations without
+  // knowing ids upfront (best-effort — never fail provisioning over the index).
+  await putSessionIndex(c.env.SECRETS, id, { backend: 'a', containerId, tenantTag: 'static-a', createdAt: new Date().toISOString() }).catch(() => {});
 
   return c.json({ ok: true, backend: 'a', sessionId: id, containerId });
 });
@@ -68,6 +103,7 @@ app.delete('/sessions/:id', async (c) => {
   if (!isValidSessionId(id)) return c.json({ error: 'invalid session id' }, 400);
   const containerId = c.env.Sandbox.idFromName(id).toString();
   await kvSecretBroker(c.env.SECRETS).remove(containerId);
+  await removeSessionIndex(c.env.SECRETS, id).catch(() => {});
   return c.json({ ok: true });
 });
 
