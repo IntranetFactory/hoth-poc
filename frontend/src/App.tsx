@@ -41,8 +41,12 @@ type View = 'chat' | 'data';
 
 const API_KEY_STORAGE = 'hoth-api-key';
 
+/** A request from the Chat tab to jump straight to a session in the browser. */
+type InspectTarget = { backend: BackendKey; sessionId: string };
+
 export function App() {
   const [view, setView] = useState<View>('chat');
+  const [inspect, setInspect] = useState<InspectTarget>();
   // API key is entered at runtime (never baked into the build) and persisted
   // locally so it survives reloads. It rides every request as
   // Authorization: Bearer <key> — via the FlueClient `token` for chat + SSE,
@@ -78,9 +82,18 @@ export function App() {
         {!apiKey ? <p className="status">Enter your API key to begin.</p> : null}
       </header>
       {view === 'chat' ? (
-        <ChatView key={apiKey} apiKey={apiKey} />
+        <ChatView
+          key={apiKey}
+          apiKey={apiKey}
+          onInspect={(target) => {
+            setInspect(target);
+            setView('data');
+          }}
+        />
       ) : (
-        <DataBrowser key={apiKey} apiKey={apiKey} />
+        // Keyed by the inspect target so a fresh "inspect" from Chat remounts
+        // the browser straight onto that session record.
+        <DataBrowser key={`${apiKey}:${inspect?.backend ?? ''}:${inspect?.sessionId ?? ''}`} apiKey={apiKey} initial={inspect} />
       )}
     </main>
   );
@@ -90,11 +103,14 @@ export function App() {
 // Chat
 // ---------------------------------------------------------------------------
 
-function ChatView({ apiKey }: { apiKey: string }) {
+function ChatView({ apiKey, onInspect }: { apiKey: string; onInspect: (target: InspectTarget) => void }) {
   const [backend, setBackend] = useState<BackendKey>('a');
   const [sessionId, setSessionId] = useState<string>();
   const [phase, setPhase] = useState<'idle' | 'preparing' | 'ready' | 'error'>('idle');
   const [detail, setDetail] = useState('');
+  // The session id box: filled automatically by "New session", and editable so
+  // an existing conversation can be re-opened (simulating a reconnect/refresh).
+  const [sessionInput, setSessionInput] = useState('');
 
   const clients = useMemo(
     () => ({
@@ -127,6 +143,7 @@ function ChatView({ apiKey }: { apiKey: string }) {
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(`${response.status}: ${JSON.stringify(payload)}`);
       setSessionId(id);
+      setSessionInput(id); // surface the new id so it can be copied / re-opened
       setPhase('ready');
       setDetail(
         nextBackend === 'b'
@@ -138,6 +155,20 @@ function ChatView({ apiKey }: { apiKey: string }) {
       setDetail(String(err));
     }
   }
+
+  // Re-attach to an existing conversation. Deliberately does NOT re-provision:
+  // the conversation already lives in its agent Durable Object, and on B a
+  // bundle is immutable per session id (re-POSTing would 409). This is the
+  // "refresh an existing connection" path.
+  function openSession() {
+    const id = sessionInput.trim();
+    if (!id) return;
+    setSessionId(id);
+    setPhase('ready');
+    setDetail('re-opened existing session (no re-provision)');
+  }
+
+  const trimmedInput = sessionInput.trim();
 
   return (
     <>
@@ -161,9 +192,26 @@ function ChatView({ apiKey }: { apiKey: string }) {
           {phase === 'preparing' ? 'Preparing…' : 'New session'}
         </button>
       </div>
+      <div className="controls">
+        <input
+          className="sessionid"
+          value={sessionInput}
+          placeholder="session id"
+          spellCheck={false}
+          onChange={(event) => setSessionInput(event.target.value)}
+        />
+        <button onClick={openSession} disabled={!trimmedInput || !apiKey}>
+          Open session
+        </button>
+        {trimmedInput ? (
+          <button className="linkbtn" onClick={() => onInspect({ backend, sessionId: trimmedInput })}>
+            Inspect in Data browser ›
+          </button>
+        ) : null}
+      </div>
       <p className={`status status-${phase}`}>
         {sessionId ? `session ${sessionId} · ` : ''}
-        {detail || (apiKey ? 'Start a new session to chat.' : '')}
+        {detail || (apiKey ? 'Start a new session, or paste a session id and open it.' : '')}
       </p>
       {sessionId && phase === 'ready' ? (
         <Chat key={`${backend}:${sessionId}`} client={clients[backend]} sessionId={sessionId} />
@@ -236,7 +284,20 @@ function Message({ message }: { message: AgentMessage }) {
 // ---------------------------------------------------------------------------
 
 type Collection = { id: string; label: string; kind: string; description?: string };
-type RecordRef = { id: string; label: string; group?: string; meta?: unknown };
+type RecordRef = { id: string; label: string; sublabel?: string; group?: string; meta?: unknown };
+
+/** ISO timestamp -> local, compact. Falls back to the raw string if unparseable. */
+function formatWhen(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return date.toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
 type RecordList = { records: RecordRef[]; note?: string };
 
 async function adminGet<T>(base: string, apiKey: string, path: string): Promise<T> {
@@ -246,23 +307,32 @@ async function adminGet<T>(base: string, apiKey: string, path: string): Promise<
   return payload as T;
 }
 
-function DataBrowser({ apiKey }: { apiKey: string }) {
-  const [backend, setBackend] = useState<BackendKey>('b');
-  const [collection, setCollection] = useState<Collection>();
-  const [record, setRecord] = useState<RecordRef>();
+/** Mirrors the server's `sessions` collection, for deep-linking from Chat. */
+const SESSIONS_COLLECTION: Collection = { id: 'sessions', label: 'Agent sessions', kind: 'sessions' };
+
+function DataBrowser({ apiKey, initial }: { apiKey: string; initial?: InspectTarget }) {
+  // When Chat deep-links a session, start already drilled into that record.
+  // (This component is remounted per target, so initial state is enough.)
+  const [backend, setBackend] = useState<BackendKey>(initial?.backend ?? 'b');
+  const [collection, setCollection] = useState<Collection | undefined>(initial ? SESSIONS_COLLECTION : undefined);
+  const [record, setRecord] = useState<RecordRef | undefined>(
+    initial ? { id: initial.sessionId, label: initial.sessionId } : undefined,
+  );
 
   const base = BACKENDS[backend].baseUrl;
 
-  // Changing backend resets the drill-down.
-  useEffect(() => {
+  // Switching backend resets the drill-down (done here rather than in an effect
+  // so it can't clobber the deep-linked initial state on mount).
+  function changeBackend(next: BackendKey) {
+    setBackend(next);
     setCollection(undefined);
     setRecord(undefined);
-  }, [backend]);
+  }
 
   return (
     <section className="browser">
       <div className="controls">
-        <select value={backend} onChange={(event) => setBackend(event.target.value as BackendKey)}>
+        <select value={backend} onChange={(event) => changeBackend(event.target.value as BackendKey)}>
           {Object.entries(BACKENDS).map(([key, value]) => (
             <option key={key} value={key}>
               {value.label}
@@ -394,6 +464,7 @@ function RecordsList({
             {records.map((r) => (
               <button key={r.id} className="keyrow" onClick={() => onOpen(r)} title={r.id}>
                 <span className="keyrow-label">{group ? r.label.replace(`${group}:`, '') || r.label : r.label}</span>
+                {r.sublabel ? <span className="keyrow-sub">{formatWhen(r.sublabel)}</span> : null}
                 <span className="keyrow-open">›</span>
               </button>
             ))}
@@ -424,10 +495,14 @@ function RecordDetail({
   record: RecordRef;
 }) {
   const [state, setState] = useState<{ detail?: Detail; error?: string; loading: boolean }>({ loading: true });
+  // Rendered view vs the raw stored payload. Sessions label it "Chat" since the
+  // rendered form is the conversation; everything else is "Formatted".
+  const [tab, setTab] = useState<'view' | 'raw'>('view');
 
   useEffect(() => {
     let cancelled = false;
     setState({ loading: true });
+    setTab('view');
     adminGet<Detail>(base, apiKey, `/admin/collections/${collection.id}/record?id=${encodeURIComponent(record.id)}`)
       .then((detail) => !cancelled && setState({ detail, loading: false }))
       .catch((err) => !cancelled && setState({ error: String(err), loading: false }));
@@ -440,15 +515,35 @@ function RecordDetail({
   if (state.error) return <div className="detail"><p className="status status-error">{state.error}</p></div>;
 
   const detail = state.detail as Detail;
+  const isSession = detail.kind === 'session';
+
   return (
     <div className="detail">
       <div className="detail-head">
         <code className="detail-key">{record.id}</code>
         {'size' in detail && typeof detail.size === 'number' ? <span className="status">{detail.size} bytes</span> : null}
       </div>
-      {detail.kind === 'kv' ? (
+
+      <nav className="tabs tabs-sub">
+        <button className={tab === 'view' ? 'tab active' : 'tab'} onClick={() => setTab('view')}>
+          {isSession ? 'Chat' : 'Formatted'}
+        </button>
+        <button className={tab === 'raw' ? 'tab active' : 'tab'} onClick={() => setTab('raw')}>
+          Raw JSON
+        </button>
+      </nav>
+
+      {tab === 'raw' ? (
+        isSession ? (
+          // For a session the raw form is what's actually persisted: the KV
+          // session-index record plus the agent DO's conversation snapshot.
+          <RawSession base={base} apiKey={apiKey} sessionId={record.id} session={(detail as { session: Record<string, unknown> }).session} />
+        ) : (
+          <pre className="value">{JSON.stringify(detail, null, 2)}</pre>
+        )
+      ) : detail.kind === 'kv' ? (
         <KvValue value={(detail as { value: string }).value} json={(detail as { json: unknown }).json} />
-      ) : detail.kind === 'session' ? (
+      ) : isSession ? (
         <SessionDetail base={base} apiKey={apiKey} backend={backend} session={(detail as { session: Record<string, unknown> }).session} sessionId={record.id} />
       ) : detail.kind === 'run' ? (
         <pre className="value">{JSON.stringify((detail as { run: unknown }).run, null, 2)}</pre>
@@ -456,6 +551,56 @@ function RecordDetail({
         <pre className="value">{JSON.stringify(detail, null, 2)}</pre>
       )}
     </div>
+  );
+}
+
+/**
+ * Raw persisted form of a session: the KV session-index record plus the agent
+ * Durable Object's conversation snapshot, read straight from the Flue
+ * conversation endpoint (the same bytes the chat client consumes). A session
+ * that never received a prompt has no stream yet — that error is shown as-is,
+ * because it is the truthful state.
+ */
+function RawSession({
+  base,
+  apiKey,
+  sessionId,
+  session,
+}: {
+  base: string;
+  apiKey: string;
+  sessionId: string;
+  session: Record<string, unknown>;
+}) {
+  const [conversation, setConversation] = useState<unknown>();
+  const [error, setError] = useState<string>();
+
+  useEffect(() => {
+    let cancelled = false;
+    setConversation(undefined);
+    setError(undefined);
+    fetch(`${base}/agents/hoth/${encodeURIComponent(sessionId)}`, {
+      headers: { authorization: `Bearer ${apiKey}` },
+    })
+      .then((res) => res.json())
+      .then((payload) => !cancelled && setConversation(payload))
+      .catch((err) => !cancelled && setError(String(err)));
+    return () => {
+      cancelled = true;
+    };
+  }, [base, apiKey, sessionId]);
+
+  return (
+    <pre className="value">
+      {JSON.stringify(
+        {
+          sessionIndex: session,
+          conversation: error ? { error } : conversation ?? '(loading…)',
+        },
+        null,
+        2,
+      )}
+    </pre>
   );
 }
 

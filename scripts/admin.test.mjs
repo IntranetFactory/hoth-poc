@@ -93,11 +93,25 @@ await (async function run() {
 
   // --- session index round-trip ------------------------------------------
   const skv = fakeKv();
-  await putSessionIndex(skv, 'aaaa-1111', { backend: 'b', tenantTag: 'tenant-aa' });
-  await putSessionIndex(skv, 'bbbb-2222', { backend: 'a' });
+  await putSessionIndex(skv, 'aaaa-1111', { backend: 'b', tenantTag: 'tenant-aa', createdAt: '2026-07-19T10:00:00.000Z' });
+  await putSessionIndex(skv, 'bbbb-2222', { backend: 'a', createdAt: '2026-07-19T12:00:00.000Z' });
   const sessions = await listSessions(skv);
   check('listSessions enumerates indexed sessions', sessions.length === 2, `got ${sessions.length}`);
   check('listSessions preserves metadata', sessions.find((s) => s.id === 'aaaa-1111')?.tenantTag === 'tenant-aa');
+
+  // --- ordering: newest first, undated last ------------------------------
+  const okv = fakeKv();
+  await putSessionIndex(okv, 'old', { createdAt: '2026-07-01T00:00:00.000Z' });
+  await putSessionIndex(okv, 'newest', { createdAt: '2026-07-19T23:00:00.000Z' });
+  await putSessionIndex(okv, 'middle', { createdAt: '2026-07-10T00:00:00.000Z' });
+  await putSessionIndex(okv, 'undated', {});
+  const ordered = await listSessions(okv);
+  check(
+    'listSessions sorts newest first',
+    ordered.map((s) => s.id).join(',') === 'newest,middle,old,undated',
+    ordered.map((s) => s.id).join(','),
+  );
+  check('listSessions puts undated records last', ordered.at(-1)?.id === 'undated');
   check('readSession returns one record', (await readSession(skv, 'bbbb-2222'))?.backend === 'a');
   check('putSessionIndex writes under session: prefix', skv._map.has('session:aaaa-1111'));
   await removeSessionIndex(skv, 'aaaa-1111');
@@ -117,6 +131,10 @@ await (async function run() {
   check('listCollectionRecords(kv) maps keys to records', kvRecords.records.length === 5);
   const sessRecords = await listCollectionRecords('sessions', deps);
   check('listCollectionRecords(sessions) reads the index', sessRecords.records.some((r) => r.id === '9f8a'));
+  const datedRecords = await listCollectionRecords('sessions', { kv: okv });
+  check('listCollectionRecords(sessions) exposes createdAt as sublabel', datedRecords.records[0]?.sublabel === '2026-07-19T23:00:00.000Z');
+  check('listCollectionRecords(sessions) keeps newest-first order', datedRecords.records[0]?.id === 'newest');
+  check('listCollectionRecords(sessions) omits sublabel when undated', datedRecords.records.at(-1)?.sublabel === undefined);
   const runRecords = await listCollectionRecords('runs', deps);
   check('listCollectionRecords(runs) uses injected listRuns', runRecords.records[0]?.id === 'run-1');
   check('listCollectionRecords(runs) labels status', runRecords.records[0]?.label.includes('completed'));

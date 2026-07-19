@@ -106,8 +106,13 @@ export async function putSessionIndex(kv, id, meta = {}) {
 }
 
 /**
- * List every indexed session, newest-effort-first by id. Reads each value
+ * List every indexed session, newest first by `createdAt`. Reads each value
  * (small JSON), so it costs one KV get per session — fine at POC cardinality.
+ *
+ * `createdAt` is an ISO-8601 UTC string, which sorts lexicographically in
+ * chronological order — no Date parsing needed. Records written before the
+ * index carried a timestamp (or with a malformed one) sort last, then by id, so
+ * they stay reachable instead of being interleaved unpredictably.
  *
  * @param {KvLike} kv
  * @returns {Promise<Array<{ id: string, [k: string]: unknown }>>}
@@ -131,7 +136,14 @@ export async function listSessions(kv) {
       out.push({ id: name.slice(SESSION_KEY_PREFIX.length), raw });
     }
   }
-  out.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  out.sort((a, b) => {
+    const ta = typeof a.createdAt === 'string' ? a.createdAt : '';
+    const tb = typeof b.createdAt === 'string' ? b.createdAt : '';
+    if (ta && tb && ta !== tb) return tb.localeCompare(ta); // newest first
+    if (ta && !tb) return -1;
+    if (!ta && tb) return 1;
+    return String(a.id).localeCompare(String(b.id));
+  });
   return out;
 }
 
@@ -198,7 +210,14 @@ export async function listCollectionRecords(collectionId, deps) {
   if (collectionId === 'sessions') {
     const sessions = await listSessions(deps.kv);
     return {
-      records: sessions.map((s) => ({ id: String(s.id), label: String(s.id), group: s.backend ? `backend ${s.backend}` : undefined, meta: s })),
+      records: sessions.map((s) => ({
+        id: String(s.id),
+        label: String(s.id),
+        // Rendered as a secondary column in the list; the frontend localises it.
+        sublabel: typeof s.createdAt === 'string' ? s.createdAt : undefined,
+        group: s.backend ? `backend ${s.backend}` : undefined,
+        meta: s,
+      })),
       note: sessions.length === 0 ? 'No sessions indexed yet — start one in the Chat tab.' : undefined,
     };
   }
