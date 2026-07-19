@@ -17,6 +17,7 @@
 import { env } from 'cloudflare:workers';
 import { createGitHubChannel, type GitHubIssueRef } from '@flue/github';
 import { defineTool, dispatch } from '@flue/runtime';
+import { putSessionIndex, readSession } from '@hoth/core';
 import { Octokit } from '@octokit/rest';
 import * as v from 'valibot';
 
@@ -62,7 +63,30 @@ export const channel = createGitHubChannel({
 });
 
 async function dispatchToHoth(ref: GitHubIssueRef, input: unknown): Promise<void> {
-  await dispatch({ agent: 'hoth', id: channel.conversationKey(ref), input });
+  const id = channel.conversationKey(ref);
+  await dispatch({ agent: 'hoth', id, input });
+  await indexConversation(id, ref).catch(() => {});
+}
+
+/**
+ * Record the conversation in the data browser's session index (plan: the
+ * `session:<id>` KV entry is the only enumerable record of a conversation).
+ * Ingest-route sessions are indexed at provisioning; GitHub conversations are
+ * born here at dispatch, so this is their indexing site. Refreshes keep the
+ * original createdAt (and extend the 24 h TTL) so the newest-first sort
+ * reflects when the issue conversation started, not its latest comment.
+ */
+async function indexConversation(id: string, ref: GitHubIssueRef): Promise<void> {
+  const store = (env as { STORE: KVNamespace }).STORE;
+  const existing = await readSession(store, id);
+  await putSessionIndex(store, id, {
+    backend: 'b',
+    channel: 'github',
+    repo: `${ref.owner}/${ref.repo}`,
+    issueNumber: ref.issueNumber,
+    createdAt:
+      existing && typeof existing.createdAt === 'string' ? existing.createdAt : new Date().toISOString(),
+  });
 }
 
 /** The GitHub issue bound to this agent instance, or null for non-GitHub sessions. */
