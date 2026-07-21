@@ -12,9 +12,17 @@ header h1 { margin: 0 0 0.75rem; font-size: 1.4rem; }
 .sessionid { min-width: 22rem; font-family: ui-monospace, monospace; font-size: 0.82rem; }
 .linkbtn { background: transparent; color: #2b6cb0; border: none; padding: 0.45rem 0.3rem; }
 .linkbtn:hover { text-decoration: underline; }
-select, button, input { font: inherit; padding: 0.45rem 0.7rem; border: 1px solid #cbd5e0; border-radius: 6px; background: #fff; }
-button { cursor: pointer; background: #2b6cb0; color: #fff; border-color: #2b6cb0; }
-button:disabled { opacity: 0.5; cursor: default; }
+/* Scoped to legacy chrome only. Tailwind/ai-elements (Panel B) now lives in the
+   same page, and these bare element rules are unlayered (they'd beat Tailwind's
+   layered utilities). :where() adds 0 specificity, so the .tab/.crumb/.linkbtn
+   overrides below keep winning exactly as before. Every legacy bare control sits
+   inside .controls or .chat; Radix portals mount on <body>, outside both. */
+:where(.controls, .chat) select,
+:where(.controls, .chat) input,
+:where(.controls, .chat) button { font: inherit; padding: 0.45rem 0.7rem; border: 1px solid #cbd5e0; border-radius: 6px; background: #fff; }
+:where(.controls, .chat) button { background: #2b6cb0; color: #fff; border-color: #2b6cb0; }
+:where(.controls, .chat) button:disabled { opacity: 0.5; cursor: default; }
+button { cursor: pointer; } /* kept global; harmless to ai-elements' own buttons */
 .status { font-size: 0.82rem; color: #4a5568; word-break: break-all; }
 .status-error { color: #c53030; }
 .chat { margin-top: 1rem; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem; }
@@ -26,8 +34,8 @@ button:disabled { opacity: 0.5; cursor: default; }
 .msg p { margin: 0.25rem 0; white-space: pre-wrap; }
 .tool { font-size: 0.8rem; }
 .tool pre { overflow-x: auto; background: #edf2f7; padding: 0.5rem; border-radius: 6px; }
-form { display: flex; gap: 0.5rem; }
-form input { flex: 1; }
+:where(.chat) form { display: flex; gap: 0.5rem; }
+:where(.chat) form input { flex: 1; }
 
 /* Chats (A/B) — two panels side by side */
 .dual { display: flex; gap: 1rem; align-items: flex-start; flex-wrap: wrap; }
@@ -70,6 +78,7 @@ form input { flex: 1; }
 /* record detail */
 .detail { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem; min-height: 8rem; margin-top: 0.5rem; }
 .detail-head { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; margin-bottom: 0.75rem; flex-wrap: wrap; }
+.detail-head-actions { display: flex; align-items: center; gap: 0.6rem; }
 .detail-key { font-family: ui-monospace, monospace; font-size: 0.85rem; word-break: break-all; }
 .value { background: #1a202c; color: #e2e8f0; padding: 0.75rem; border-radius: 6px; overflow-x: auto; font-size: 0.8rem; max-height: 55vh; white-space: pre-wrap; word-break: break-word; }
 .meta { margin: 0 0 0.75rem; }

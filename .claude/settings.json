@@ -8,7 +8,9 @@
       "Bash(find node_modules/.pnpm/@flue+runtime@1.0.0-beta.9__a7a172e4869e9a05a338937137b978fb/node_modules/@flue/runtime/dist -name *.js)",
       "Bash(find node_modules/.pnpm/@flue+runtime@1.0.0-beta.9__a7a172e4869e9a05a338937137b978fb/node_modules/@flue/runtime/docs -iname *model* -o -iname *provider*)",
       "Bash(env)",
-      "Bash(pnpm deploy:*)"
+      "Bash(pnpm deploy:*)",
+      "Skill(shadcn)",
+      "Skill(shadcn:*)"
     ]
   }
 }

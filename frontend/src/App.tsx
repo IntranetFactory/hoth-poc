@@ -23,6 +23,7 @@ import { useFlueAgent } from '@flue/react';
 import { createFlueClient } from '@flue/sdk';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import { AgentChat } from './AgentChat';
 import hothBundle from './generated/hoth-bundle.json';
 
 const BACKENDS = {
@@ -139,7 +140,15 @@ export function App() {
         // Keyed by the inspect target so a fresh "inspect" from Chat remounts
         // the browser straight onto that session record.
         <div hidden={view !== 'data'}>
-          <DataBrowser key={`${apiKey}:${inspect?.backend ?? ''}:${inspect?.sessionId ?? ''}`} apiKey={apiKey} initial={inspect} />
+          <DataBrowser
+            key={`${apiKey}:${inspect?.backend ?? ''}:${inspect?.sessionId ?? ''}`}
+            apiKey={apiKey}
+            initial={inspect}
+            onOpenInChats={(target) => {
+              setActive(target);
+              setView('chats');
+            }}
+          />
         </div>
       ) : null}
     </main>
@@ -343,9 +352,10 @@ function Message({ message }: { message: AgentMessage }) {
 // Chats (A/B) — two chat panels on one session, to show they converge
 // ---------------------------------------------------------------------------
 
-// Panel B is an isolated, swappable slot. When the experimental chat component
-// is ready, import it and point this alias at it — nothing else changes.
-const PanelB = Chat;
+// Panel B is an isolated, swappable slot: the flue baseline (Panel A) on the
+// left, the ai-elements rebuild on the right. Both take { client, sessionId }
+// and observe the same agent session, so they still converge.
+const PanelB = AgentChat;
 
 /**
  * Two independent chat replicas of the SAME session, side by side. Each panel
@@ -382,7 +392,7 @@ function DualChatView({ apiKey, active }: { apiKey: string; active?: ActiveSessi
           <Chat key={`a:${backend}:${sessionId}`} client={client} sessionId={sessionId} />
         </div>
         <div className="pane">
-          <h3 className="pane-title">Panel B · Chat</h3>
+          <h3 className="pane-title">Panel B · ai-elements</h3>
           <PanelB key={`b:${backend}:${sessionId}`} client={client} sessionId={sessionId} />
         </div>
       </div>
@@ -421,7 +431,15 @@ async function adminGet<T>(base: string, apiKey: string, path: string): Promise<
 /** Mirrors the server's `sessions` collection, for deep-linking from Chat. */
 const SESSIONS_COLLECTION: Collection = { id: 'sessions', label: 'Agent sessions', kind: 'sessions' };
 
-function DataBrowser({ apiKey, initial }: { apiKey: string; initial?: InspectTarget }) {
+function DataBrowser({
+  apiKey,
+  initial,
+  onOpenInChats,
+}: {
+  apiKey: string;
+  initial?: InspectTarget;
+  onOpenInChats: (target: ActiveSession) => void;
+}) {
   // When Chat deep-links a session, start already drilled into that record.
   // (This component is remounted per target, so initial state is enough.)
   const [backend, setBackend] = useState<BackendKey>(initial?.backend ?? 'b');
@@ -485,7 +503,7 @@ function DataBrowser({ apiKey, initial }: { apiKey: string; initial?: InspectTar
       ) : !record ? (
         <RecordsList base={base} apiKey={apiKey} collection={collection} onOpen={setRecord} />
       ) : (
-        <RecordDetail base={base} apiKey={apiKey} backend={backend} collection={collection} record={record} />
+        <RecordDetail base={base} apiKey={apiKey} backend={backend} collection={collection} record={record} onOpenInChats={onOpenInChats} />
       )}
     </section>
   );
@@ -598,12 +616,14 @@ function RecordDetail({
   backend,
   collection,
   record,
+  onOpenInChats,
 }: {
   base: string;
   apiKey: string;
   backend: BackendKey;
   collection: Collection;
   record: RecordRef;
+  onOpenInChats: (target: ActiveSession) => void;
 }) {
   const [state, setState] = useState<{ detail?: Detail; error?: string; loading: boolean }>({ loading: true });
   // Rendered view vs the raw stored payload. Sessions label it "Chat" since the
@@ -632,7 +652,16 @@ function RecordDetail({
     <div className="detail">
       <div className="detail-head">
         <code className="detail-key">{record.id}</code>
-        {'size' in detail && typeof detail.size === 'number' ? <span className="status">{detail.size} bytes</span> : null}
+        <span className="detail-head-actions">
+          {'size' in detail && typeof detail.size === 'number' ? <span className="status">{detail.size} bytes</span> : null}
+          {isSession ? (
+            // Symmetric to the Chat tab's "Inspect in Data browser ›": lifts this
+            // session up to App's `active` and jumps to the side-by-side A/B view.
+            <button className="linkbtn" onClick={() => onOpenInChats({ backend, sessionId: record.id })}>
+              Open in Chats (A/B) ›
+            </button>
+          ) : null}
+        </span>
       </div>
 
       <nav className="tabs tabs-sub">
