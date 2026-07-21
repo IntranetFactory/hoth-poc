@@ -29,6 +29,12 @@ button:disabled { opacity: 0.5; cursor: default; }
 form { display: flex; gap: 0.5rem; }
 form input { flex: 1; }
 
+/* Chats (A/B) — two panels side by side */
+.dual { display: flex; gap: 1rem; align-items: flex-start; flex-wrap: wrap; }
+.dual .pane { flex: 1 1 360px; min-width: 0; }
+.dual .chat { margin-top: 0.5rem; }
+.pane-title { margin: 0.5rem 0 0; font-size: 0.9rem; color: #4a5568; }
+
 /* Data browser */
 .browser { margin-top: 0.5rem; }
 .browser code { font-family: ui-monospace, monospace; background: #edf2f7; padding: 0.05rem 0.3rem; border-radius: 4px; }

@@ -37,16 +37,46 @@ const BACKENDS = {
 } as const;
 
 type BackendKey = keyof typeof BACKENDS;
-type View = 'chat' | 'data';
+type View = 'chat' | 'data' | 'chats';
 
 const API_KEY_STORAGE = 'hoth-api-key';
 
 /** A request from the Chat tab to jump straight to a session in the browser. */
 type InspectTarget = { backend: BackendKey; sessionId: string };
 
+/** The Chat tab's currently-ready session, shared with the Chats (A/B) tab. */
+type ActiveSession = { backend: BackendKey; sessionId: string };
+
+// The active tab lives in the URL hash (#chat / #data / #chats) rather than in
+// plain state, so it's deep-linkable and browser back/forward works. The hash
+// never reaches the server, so it needs no router and no Worker route config.
+const readView = (): View => {
+  const h = window.location.hash.replace(/^#\/?/, '');
+  return h === 'data' ? 'data' : h === 'chats' ? 'chats' : 'chat'; // exact ('chats' ⊃ 'chat')
+};
+
+function useHashView(): [View, (v: View) => void] {
+  const [view, setView] = useState<View>(readView);
+  useEffect(() => {
+    const onHash = () => setView(readView());
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+  // Assigning the hash creates a history entry and fires 'hashchange', which the
+  // listener above turns back into `view` — that's what makes back/forward work.
+  return [view, (v) => { window.location.hash = v; }];
+}
+
 export function App() {
-  const [view, setView] = useState<View>('chat');
+  const [view, setView] = useHashView();
   const [inspect, setInspect] = useState<InspectTarget>();
+  // The Chat tab's ready session, lifted here so the side-by-side "Chats (A/B)"
+  // tab can mirror it (both panels observe the same agent id).
+  const [active, setActive] = useState<ActiveSession>();
+  // Data browser and the dual-chat view do real work on mount (admin fetches /
+  // extra streams), so mount them lazily on first visit, then keep them alive.
+  const [dataMounted, setDataMounted] = useState(false);
+  const [chatsMounted, setChatsMounted] = useState(false);
   // API key is entered at runtime (never baked into the build) and persisted
   // locally so it survives reloads. It rides every request as
   // Authorization: Bearer <key> — via the FlueClient `token` for chat + SSE,
@@ -58,6 +88,9 @@ export function App() {
     localStorage.setItem(API_KEY_STORAGE, value);
   }
 
+  useEffect(() => { if (view === 'data') setDataMounted(true); }, [view]);
+  useEffect(() => { if (view === 'chats') setChatsMounted(true); }, [view]);
+
   return (
     <main>
       <header>
@@ -68,6 +101,9 @@ export function App() {
           </button>
           <button className={view === 'data' ? 'tab active' : 'tab'} onClick={() => setView('data')}>
             Data browser
+          </button>
+          <button className={view === 'chats' ? 'tab active' : 'tab'} onClick={() => setView('chats')}>
+            Chats (A/B)
           </button>
         </nav>
         <div className="controls">
@@ -81,20 +117,31 @@ export function App() {
         </div>
         {!apiKey ? <p className="status">Enter your API key to begin.</p> : null}
       </header>
-      {view === 'chat' ? (
+      {/* All tabs stay mounted (inactive ones hidden) so the Chat session +
+          streamed messages survive tab switches instead of being torn down. */}
+      <div hidden={view !== 'chat'}>
         <ChatView
           key={apiKey}
           apiKey={apiKey}
+          onActiveSession={setActive}
           onInspect={(target) => {
             setInspect(target);
             setView('data');
           }}
         />
-      ) : (
+      </div>
+      {chatsMounted ? (
+        <div hidden={view !== 'chats'}>
+          <DualChatView key={apiKey} apiKey={apiKey} active={active} />
+        </div>
+      ) : null}
+      {dataMounted ? (
         // Keyed by the inspect target so a fresh "inspect" from Chat remounts
         // the browser straight onto that session record.
-        <DataBrowser key={`${apiKey}:${inspect?.backend ?? ''}:${inspect?.sessionId ?? ''}`} apiKey={apiKey} initial={inspect} />
-      )}
+        <div hidden={view !== 'data'}>
+          <DataBrowser key={`${apiKey}:${inspect?.backend ?? ''}:${inspect?.sessionId ?? ''}`} apiKey={apiKey} initial={inspect} />
+        </div>
+      ) : null}
     </main>
   );
 }
@@ -103,7 +150,15 @@ export function App() {
 // Chat
 // ---------------------------------------------------------------------------
 
-function ChatView({ apiKey, onInspect }: { apiKey: string; onInspect: (target: InspectTarget) => void }) {
+function ChatView({
+  apiKey,
+  onInspect,
+  onActiveSession,
+}: {
+  apiKey: string;
+  onInspect: (target: InspectTarget) => void;
+  onActiveSession: (session?: ActiveSession) => void;
+}) {
   const [backend, setBackend] = useState<BackendKey>('a');
   const [sessionId, setSessionId] = useState<string>();
   const [phase, setPhase] = useState<'idle' | 'preparing' | 'ready' | 'error'>('idle');
@@ -119,6 +174,11 @@ function ChatView({ apiKey, onInspect }: { apiKey: string; onInspect: (target: I
     }),
     [apiKey],
   );
+
+  // Report the ready session up to App so the "Chats (A/B)" tab can mirror it.
+  useEffect(() => {
+    onActiveSession(sessionId && phase === 'ready' ? { backend, sessionId } : undefined);
+  }, [backend, sessionId, phase, onActiveSession]);
 
   async function newSession(nextBackend: BackendKey) {
     const id = crypto.randomUUID();
@@ -276,6 +336,57 @@ function Message({ message }: { message: AgentMessage }) {
         ) : null,
       )}
     </article>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Chats (A/B) — two chat panels on one session, to show they converge
+// ---------------------------------------------------------------------------
+
+// Panel B is an isolated, swappable slot. When the experimental chat component
+// is ready, import it and point this alias at it — nothing else changes.
+const PanelB = Chat;
+
+/**
+ * Two independent chat replicas of the SAME session, side by side. Each panel
+ * runs its own useFlueAgent (its own SSE stream to the same agent Durable
+ * Object), so they demonstrate server-authoritative convergence: a message sent
+ * in one appears in both once the DO broadcasts it, while unsent input text —
+ * being component-local — stays in the panel you typed it in. The session is
+ * mirrored from the Chat tab via `active`.
+ */
+function DualChatView({ apiKey, active }: { apiKey: string; active?: ActiveSession }) {
+  const clients = useMemo(
+    () => ({
+      a: createFlueClient({ baseUrl: BACKENDS.a.baseUrl, token: apiKey }),
+      b: createFlueClient({ baseUrl: BACKENDS.b.baseUrl, token: apiKey }),
+    }),
+    [apiKey],
+  );
+
+  if (!active) {
+    return <p className="status">Start or open a session on the Chat tab — both panels here mirror it.</p>;
+  }
+
+  const { backend, sessionId } = active;
+  const client = clients[backend];
+  return (
+    <>
+      <p className="status">
+        Two independent replicas of session {sessionId} ({BACKENDS[backend].label.split(' — ')[0]}).
+        Each opens its own stream; type-then-send appears in both — the server is the source of truth.
+      </p>
+      <div className="dual">
+        <div className="pane">
+          <h3 className="pane-title">Panel A · Chat</h3>
+          <Chat key={`a:${backend}:${sessionId}`} client={client} sessionId={sessionId} />
+        </div>
+        <div className="pane">
+          <h3 className="pane-title">Panel B · Chat</h3>
+          <PanelB key={`b:${backend}:${sessionId}`} client={client} sessionId={sessionId} />
+        </div>
+      </div>
+    </>
   );
 }
 
