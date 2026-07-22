@@ -24,10 +24,12 @@ export {
   listCollectionRecords,
   readCollectionRecord,
 } from './admin.js';
-export { ECHO_HOST, DEFAULT_LLM, configureLlm, SESSION_ID_RE, isValidSessionId } from './config.js';
+export { ECHO_HOST, SEMANTIUS_KEY_SENTINEL, DOMAIN_WHITELIST, DEFAULT_LLM, configureLlm, SESSION_ID_RE, isValidSessionId } from './config.js';
 export {
   kvSecretBroker,
   injectAndForward,
+  brokerEgress,
+  isWhitelistedHost,
   BEARER_KEY_PREFIX,
   TAG_KEY_PREFIX,
   DEFAULT_SECRET_TTL_SECONDS,

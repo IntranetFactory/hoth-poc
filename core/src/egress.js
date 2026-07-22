@@ -19,6 +19,88 @@ export const BEARER_KEY_PREFIX = 'bearer:';
 export const TAG_KEY_PREFIX = 'tag:';
 export const DEFAULT_SECRET_TTL_SECONDS = 24 * 60 * 60;
 
+function jsonResponse(status, body) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+/**
+ * Does `host` match a single whitelist glob? Supports an exact host or a
+ * `*.suffix` subdomain wildcard. `*.semantius.ai` matches `tests.semantius.ai`
+ * but NOT the bare apex `semantius.ai`, nor look-alikes like
+ * `evil-semantius.ai` or `tests.semantius.ai.evil.com` (the leading dot in the
+ * suffix is load-bearing).
+ */
+function hostMatchesPattern(host, pattern) {
+  const h = host.toLowerCase();
+  const p = pattern.toLowerCase();
+  if (p === h) return true;
+  if (p.startsWith('*.')) {
+    const suffix = p.slice(1); // keep the leading dot: ".semantius.ai"
+    return h.endsWith(suffix) && h.length > suffix.length;
+  }
+  return false;
+}
+
+/** True when `host` matches any glob in `whitelist` (see DOMAIN_WHITELIST). */
+export function isWhitelistedHost(host, whitelist) {
+  return whitelist.some((pattern) => hostMatchesPattern(host, pattern));
+}
+
+/**
+ * Catch-all secret broker with a domain whitelist (plan §7 secret-at-egress).
+ * The container holds only the placeholder `sentinel`; the real key lives here
+ * in the Worker and never enters the sandbox. Policy per outbound request:
+ *
+ *   host whitelisted + sentinel present -> swap sentinel→secret in every header, forward
+ *   host whitelisted + no sentinel      -> forward as-is (e.g. follow-up JWT calls)
+ *   host NOT whitelisted                -> reject (a sentinel here is an
+ *                                          exfiltration attempt — never leak the key)
+ *
+ * Matching is by substring, not whole-value equality: semantius sends the key
+ * on an MCP `Authorization: Bearer <key>` header, so the value is
+ * `Bearer __sak__` — replacing just the sentinel span preserves the `Bearer `
+ * scheme; a bare `__sak__` value becomes exactly `secret`.
+ *
+ * @param {Request} request
+ * @param {{ whitelist: string[], sentinel: string, secret: string | undefined }} policy
+ * @param {typeof fetch} fetchImpl
+ */
+export async function brokerEgress(request, policy, fetchImpl = fetch) {
+  const { whitelist, sentinel, secret } = policy;
+  const host = new URL(request.url).hostname;
+  const headers = new Headers(request.headers);
+  // Collect first, then set — mutating Headers mid-iteration is unsafe.
+  const hits = [];
+  for (const [name, value] of headers) {
+    if (value.includes(sentinel)) hits.push([name, value]);
+  }
+
+  if (!isWhitelistedHost(host, whitelist)) {
+    // Deny by default. If the request carried the sentinel this is an attempt to
+    // send the real key somewhere it shouldn't go — reject WITHOUT swapping.
+    return jsonResponse(403, {
+      error: hits.length
+        ? 'egress denied: credential sentinel present but host not in whitelist'
+        : 'egress denied: host not in whitelist',
+      host,
+    });
+  }
+
+  // Whitelisted host, no credential to inject: legitimate follow-up traffic
+  // (e.g. JWT-bearing MCP calls). Forward unchanged.
+  if (hits.length === 0) return fetchImpl(request);
+
+  if (!secret) {
+    // Never forward the raw placeholder.
+    return jsonResponse(503, { error: 'egress misconfigured: no real secret bound server-side' });
+  }
+  for (const [name, value] of hits) headers.set(name, value.replaceAll(sentinel, secret));
+  return fetchImpl(new Request(request, { headers }));
+}
+
 /**
  * KV-backed SecretBroker (the Cloudflare implementation of the seam).
  * `kv` is anything with get/put/delete(key) — a Workers KV namespace binding,

@@ -1,0 +1,20 @@
+# ── Docker build context = REPO ROOT ────────────────────────────────────────
+# backend-a/ and backend-b/ each set  image_build_context ".."  so their images
+# can COPY the shared semantius CLI from linux-x64/. That makes the whole repo
+# the build context, so exclude everything heavy or irrelevant here — the images
+# only ever COPY  linux-x64/  and  backend-a/skills/ .
+**/node_modules
+**/.wrangler
+**/.flue-vite
+**/dist
+**/dist-bundle
+.git
+.claude
+.agents
+.patch-ds
+frontend
+core
+scripts
+patches
+*.tsbuildinfo
+.api-token

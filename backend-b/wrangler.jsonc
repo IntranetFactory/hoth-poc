@@ -16,6 +16,10 @@
     {
       "class_name": "HothSandbox",
       "image": "./Dockerfile",
+      // Build context = repo root so the image can COPY the shared semantius
+      // CLI from ../linux-x64/ (single binary, no per-backend duplication).
+      // Kept small by the repo-root .dockerignore.
+      "image_build_context": "..",
       "instance_type": "lite"
     }
   ],

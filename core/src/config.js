@@ -6,6 +6,26 @@
 /** The mock Hoth Tourism API (HTTP echo endpoint, plan §7/§14). */
 export const ECHO_HOST = 'postman-echo.com';
 
+/**
+ * Placeholder the sandbox is given in place of the real Semantius API key. The
+ * container only ever holds this sentinel — the real key never enters the
+ * sandbox. The catch-all egress handler scans EVERY outbound request header and
+ * swaps any header whose value is exactly this sentinel for the real secret
+ * (see brokerEgress in egress.js). Keep this value in sync with the
+ * `ENV SEMANTIUS_API_KEY` line baked into both backends' Dockerfiles.
+ */
+export const SEMANTIUS_KEY_SENTINEL = '__sak__';
+
+/**
+ * Egress domain whitelist for the catch-all secret broker (brokerEgress). A
+ * request may leave the sandbox — and is eligible for the __sak__ → real-key
+ * swap — only when its host matches one of these globs. Everything else is
+ * rejected, including a sentinel-bearing request to a non-whitelisted host,
+ * which is treated as an exfiltration attempt (the real key is never sent
+ * there). `*.<domain>` matches any subdomain of <domain>, not the bare apex.
+ */
+export const DOMAIN_WHITELIST = ['*.semantius.ai'];
+
 /** Default LLM settings; override per-worker with the LLM_PROVIDER /
  * LLM_MODEL / LLM_BASE_URL vars and the LLM_API_KEY secret. Provider
  * "cloudflare" uses the Workers AI binding and needs no key. */

@@ -49,6 +49,14 @@ export function buildSkillCheckCommand(req) {
     case 'count-skill-files':
       // Clean-base / positive-control file count (plan §13). A *file* count.
       return `find '${SKILLS_DIR}' -type f 2>/dev/null | wc -l`;
+    case 'semantius-whoami':
+      // End-to-end egress proof: semantius reads the image-baked __sak__
+      // placeholder and calls https://<org>.semantius.ai; the Worker's
+      // brokerEgress swaps __sak__ for the real key on the whitelisted host.
+      // A successful identity response means the whole secret-at-egress path
+      // (baked env + interceptHttps + CA trust + swap + whitelist) works. No
+      // interpolation — fully fixed string. SEMANTIUS_TIMEOUT bounds a hang.
+      return `SEMANTIUS_TIMEOUT=20 semantius whoami 2>&1`;
     default:
       throw new SkillCheckError(`unknown op: ${String(op)}`);
   }
