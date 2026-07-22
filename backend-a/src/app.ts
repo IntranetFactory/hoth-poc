@@ -23,6 +23,7 @@ import {
   adminCollections,
   listCollectionRecords,
   readCollectionRecord,
+  STREAM_PROTOCOL_HEADERS,
 } from '@hoth/core';
 
 type Env = {
@@ -34,7 +35,10 @@ type Env = {
 
 const app = new Hono<{ Bindings: Env }>();
 
-app.use('*', cors());
+// exposeHeaders: without it the browser can't read the durable-streams cursor
+// headers (Stream-Up-To-Date / Stream-Next-Offset), so the conversation client
+// busy-polls catch-up reads forever. See STREAM_PROTOCOL_HEADERS.
+app.use('*', cors({ exposeHeaders: STREAM_PROTOCOL_HEADERS }));
 // Every route except /health requires Authorization: Bearer <API_TOKEN>.
 // Fail-closed if API_TOKEN is unset (503). This covers the flue() agent/stream
 // routes too, since the guard runs before app.route('/', flue()).

@@ -33,6 +33,7 @@ import {
   provisionSkill,
   resolveSandboxBinding,
   validateBundle,
+  STREAM_PROTOCOL_HEADERS,
 } from '@hoth/core';
 import { channel } from './channels/github';
 
@@ -46,7 +47,10 @@ const BUNDLE_TTL_SECONDS = 24 * 60 * 60;
 
 const app = new Hono<{ Bindings: Env }>();
 
-app.use('*', cors());
+// exposeHeaders: without it the browser can't read the durable-streams cursor
+// headers (Stream-Up-To-Date / Stream-Next-Offset), so the conversation client
+// busy-polls catch-up reads forever. See STREAM_PROTOCOL_HEADERS.
+app.use('*', cors({ exposeHeaders: STREAM_PROTOCOL_HEADERS }));
 
 // GitHub webhook (POST /channels/github/webhook). Registered BEFORE the API
 // key guard: GitHub can't send our bearer — the channel authenticates each

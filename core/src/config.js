@@ -60,6 +60,36 @@ export function configureLlm(registerProvider, env) {
   return `${provider}/${model}`;
 }
 
+/**
+ * durable-streams protocol response headers that the browser client MUST be
+ * able to read. The Flue agent conversation endpoint (`/agents/:name/:id`)
+ * carries the stream cursor in these headers — `Stream-Up-To-Date` and
+ * `Stream-Next-Offset` above all. Cross-origin (the frontend Worker and these
+ * backend Workers are different origins), the Fetch spec hides every response
+ * header from JS EXCEPT the CORS-safelisted ones UNLESS the server names it in
+ * `Access-Control-Expose-Headers`. Without this, the long-poll client never
+ * observes `Stream-Up-To-Date`, so it never reaches "up-to-date", never
+ * advances its offset, never switches to a held long-poll — and busy-polls
+ * catch-up reads at network speed forever (a request flood when a stored
+ * conversation is opened). curl sees the headers and works; the browser can't.
+ * Pass this to Hono's `cors({ exposeHeaders })` in both backends.
+ */
+export const STREAM_PROTOCOL_HEADERS = [
+  'Stream-Next-Offset',
+  'Stream-Cursor',
+  'Stream-Up-To-Date',
+  'Stream-Closed',
+  'Stream-Seq',
+  'Stream-TTL',
+  'Stream-Expires-At',
+  'Stream-SSE-Data-Encoding',
+  'Producer-Id',
+  'Producer-Epoch',
+  'Producer-Seq',
+  'Producer-Expected-Seq',
+  'Producer-Received-Seq',
+];
+
 /** Session ids are server-minted lowercase UUIDs (plan §6/§9.6). This shape is
  * a fixed point of the sandbox SDK's sanitizeSandboxId, which keeps
  * `containerId = idFromName(id)` derivable in the Worker. */

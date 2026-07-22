@@ -283,7 +283,7 @@ function ChatView({
         {detail || (apiKey ? 'Start a new session, or paste a session id and open it.' : '')}
       </p>
       {sessionId && phase === 'ready' ? (
-        <Chat key={`${backend}:${sessionId}`} client={clients[backend]} sessionId={sessionId} />
+        <AgentChat key={`${backend}:${sessionId}`} client={clients[backend]} sessionId={sessionId} />
       ) : null}
     </>
   );

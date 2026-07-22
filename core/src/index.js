@@ -24,7 +24,7 @@ export {
   listCollectionRecords,
   readCollectionRecord,
 } from './admin.js';
-export { ECHO_HOST, SEMANTIUS_KEY_SENTINEL, DOMAIN_WHITELIST, DEFAULT_LLM, configureLlm, SESSION_ID_RE, isValidSessionId } from './config.js';
+export { ECHO_HOST, SEMANTIUS_KEY_SENTINEL, DOMAIN_WHITELIST, DEFAULT_LLM, configureLlm, SESSION_ID_RE, isValidSessionId, STREAM_PROTOCOL_HEADERS } from './config.js';
 export {
   kvSecretBroker,
   injectAndForward,
