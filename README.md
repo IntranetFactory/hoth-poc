@@ -1,11 +1,14 @@
 # Hoth Trip-Planner POC
 
-Proves that **two skill-delivery mechanisms yield identical agent behavior** on Flue +
+Proves that **two agent-delivery mechanisms yield identical agent behavior** on Flue +
 Cloudflare Sandbox:
 
-- **Backend A** — hard-coded / OOTB: the skill is **baked into the container image**.
-- **Backend B** — dynamic bundle: the whole skill is serialized as **one JSON string**,
-  delivered at runtime, and reconstructed into the sandbox (the multi-tenant path).
+- **Backend A** — hard-coded / OOTB: the fixed `hoth-trip-planner` agent, its skills
+  **baked into the container image**, instructions/model resolved at build time.
+- **Backend B** — dynamic bundle, **multi-agent**: a whole agent (instructions + model
+  overrides + ALL its skills) is serialized as **one JSON string** — the *agent bundle* —
+  delivered at session creation, and reconstructed into the sandbox (the multi-tenant
+  path). Which agent a session runs is data, not code.
 
 See [`hoth-poc-plan.md`](./hoth-poc-plan.md) for the full design and acceptance criteria.
 
@@ -14,8 +17,8 @@ See [`hoth-poc-plan.md`](./hoth-poc-plan.md) for the full design and acceptance 
 | Deployable | URL |
 | ---------- | --- |
 | Frontend (A/B chat UI) | https://hoth-poc-frontend.ma532.workers.dev |
-| Backend A — image-baked skill | https://hoth-poc-backend-a.ma532.workers.dev |
-| Backend B — dynamic bundle | https://hoth-poc-backend-b.ma532.workers.dev |
+| Backend A — image-baked skills | https://hoth-poc-backend-a.ma532.workers.dev |
+| Backend B — dynamic bundle (multi-agent) | https://hoth-poc-backend-b.ma532.workers.dev |
 
 All three run on Cloudflare Workers (account `Ma@adenin.com`). Backends A and B each own a
 container app (Containers) and a private KV namespace; the frontend is a static SPA served
@@ -24,15 +27,52 @@ from Workers assets with the two backend URLs baked in at build time.
 ## Layout
 
 ```
+agents/      SOURCE OF TRUTH for every agent. One folder per agent:
+             agents/<name>/agent.jsonc      REQUIRED config (folders without it are
+                                            skipped) — schema: agents/agent.schema.json
+             agents/<name>/INSTRUCTIONS.md  optional, appended to the config instructions
+             agents/<name>/skills/<skill>/  0..16 skills (each needs a SKILL.md)
 core/        Host-agnostic Flue-core seams (no Cloudflare imports):
-             bundle format + validation, tar reconstruction (2-RPC), provisionSkill,
-             egress/secret broker interface, API-key guard, deterministic skill-check.
-backend-a/   Flue+CF Worker — skill baked into the image. Owns the canonical skill
-             folder (source of truth) and the bundler CLI.
-backend-b/   Flue+CF Worker — skill injected at runtime from the one-JSON-string bundle.
-frontend/    React + Vite — one chat, New-session button, A/B backend dropdown.
-scripts/     node-smoke.mjs (portability, zero Cloudflare) · acceptance.mjs (C1–C5).
+             agent-bundle format + validation, tar reconstruction (2-RPC),
+             provisionAgentSkills, egress/secret broker interface, API-key guard,
+             deterministic skill-check. `@hoth/core/node` adds the bundler library
+             (fs walk, JSONC parse via jsonc-parser).
+backend-a/   Flue+CF Worker — the FIXED hoth-trip-planner agent; its skills are baked
+             into the image (Dockerfile COPY of agents/hoth-trip-planner/skills),
+             instructions/model from bundler-generated src/generated/agent.json.
+backend-b/   Flue+CF Worker — the MULTI-AGENT backend: one generic `main` Flue agent;
+             the agent bundle POSTed per session decides instructions, model, skills.
+             First-turn identity rides the creating send's `initialData` (see plan §6).
+frontend/    React + Vite — one chat, New-session button, A/B backend dropdown, and an
+             agent dropdown when B is selected (fed by the bundler output).
+scripts/     bundle.mjs (agent bundler CLI) · node-smoke.mjs (portability, zero
+             Cloudflare) · acceptance.mjs (C1–C5) · admin.test.mjs.
 ```
+
+## Agents & the agent bundle
+
+`pnpm bundle` (scripts/bundle.mjs) scans `agents/`, skips folders without `agent.jsonc`
+(with a warning), and per agent emits ONE JSON — the **agent bundle**:
+
+```jsonc
+{
+  "agentName": "hoth-trip-planner",   // = folder name
+  "version": "<sha256-16>",           // content hash over config + all skill files
+  "baseImage": "node",                // selects the Sandbox binding
+  "instructions": "…",                // agent.jsonc instructions + INSTRUCTIONS.md (appended)
+  "model": "openrouter/…",            // optional, pre-normalized (see LLM configuration)
+  "modelBaseUrl": "https://…",        // optional, from model_base_url
+  "skills": { "planner": { "SKILL.md": "…", "references/…": "…" } }  // 0..16 skills
+}
+```
+
+Artifacts per run: `dist-bundle/<name>.agent.json` (canonical, used by acceptance and the
+GitHub-channel seed), `frontend/src/generated/agents/<name>.json` (glob-imported by the UI —
+a NEW agents/ folder shows up in the frontend agent dropdown after re-running `pnpm bundle`,
+no code change), and `backend-a/src/generated/agent.json` (meta-only build input for A's
+fixed agent). Limits: ≤16 skills, ≤64 files & ≤1 MiB per skill, ≤4 MiB per agent,
+instructions ≤64 KiB (`core/src/agent.js`). Zero-skill agents (e.g. `semantius-admin`) are
+valid — nothing is provisioned, the bundle still carries instructions/model.
 
 ## Prerequisites
 
@@ -52,8 +92,8 @@ scripts/     node-smoke.mjs (portability, zero Cloudflare) · acceptance.mjs (C1
 
 ```bash
 pnpm install
-pnpm bundle            # walk skill folder -> one JSON string; round-trip assert; emit bundle
-pnpm smoke             # Node smoke test — core skill flow with zero Cloudflare present
+pnpm bundle            # scan agents/ -> one agent bundle per folder; round-trip assert; emit
+pnpm smoke             # Node smoke test — core agent-bundle flow with zero Cloudflare present
 
 pnpm dev:frontend      # http://localhost:5173  (talks to localhost:3583/3584 in dev)
 ```
@@ -93,12 +133,23 @@ outside abuse, not per-tenant identity — real multi-tenant auth is the server-
 
 ## LLM configuration
 
-Fully env-driven (`configureLlm()` in `core/src/config.js`, wired per backend in
-`src/llm.ts`): `LLM_PROVIDER` (`cloudflare` | `openrouter` | `custom`), `LLM_MODEL`, and
-optional `LLM_BASE_URL` (required for `custom`) are plain wrangler `vars`; only
-`LLM_API_KEY` is a secret (`.dev.vars` locally, `wrangler secret put` deployed). Default:
-OpenRouter + `deepseek/deepseek-v4-flash`. Keep the vars/secret split — the key is the only
-secret value.
+Two layers:
+
+- **Env default** (`configureLlm()` in `core/src/config.js`, wired per backend in
+  `src/llm.ts`): `LLM_PROVIDER` (`cloudflare` | `openrouter` | `custom`), `LLM_MODEL`, and
+  optional `LLM_BASE_URL` (required for `custom`) are plain wrangler `vars`; only
+  `LLM_API_KEY` is a secret (`.dev.vars` locally, `wrangler secret put` deployed). Default:
+  OpenRouter + `deepseek/deepseek-v4-flash`. Keep the vars/secret split — the key is the
+  only secret value.
+- **Per-agent override** (`agent.jsonc`): optional `model` and `model_base_url`. The
+  bundler normalizes `model` with a prefix rule — a first path segment that is a known
+  provider (`openrouter`, `custom`, `cloudflare`) is kept as-is, anything else gets
+  `openrouter/` prepended (so `"deepseek/deepseek-v4-flash"` means
+  `openrouter/deepseek/deepseek-v4-flash`). At runtime `agentModelSpecifier()`
+  (`src/llm.ts`) registers a dedicated one-model Pi provider `agent-<name>` when an agent
+  overrides anything; with no override the env default applies. `model_base_url` overrides
+  transport only — auth is always the worker-wide `LLM_API_KEY` secret. Backend A applies
+  its fixed agent's override at build time; backend B per session from the bundle.
 
 ## Data browser
 
@@ -116,7 +167,7 @@ client, not an admin endpoint.
 ## GitHub channel (backend B)
 
 `backend-b/src/channels/github.ts` (`@flue/github`) connects IntranetFactory/hoth-poc to
-the `hoth` agent: `issues.opened` and `issue_comment.created` dispatch one conversation per
+the `main` agent: `issues.opened` and `issue_comment.created` dispatch one conversation per
 issue; replies are posted via the `comment_on_github_issue` tool and carry a
 `<!-- hoth-agent-reply -->` marker the webhook skips (loop guard). The agent instructions
 must insist on the tool — otherwise the model answers in plain conversation text and
@@ -125,10 +176,11 @@ nothing appears on GitHub.
 - Webhook endpoint: `https://hoth-poc-backend-b.ma532.workers.dev/channels/github/webhook`,
   mounted in `app.ts` **before** the API-key guard (auth is `X-Hub-Signature-256`, not the
   bearer). The explicit early mount is load-bearing.
-- GitHub conversations load the same trip-planner skill from the no-TTL KV entry
-  `bundle:github-default`, uploaded manually:
-  `wrangler kv key put bundle:github-default --path frontend/src/generated/hoth-bundle.json`
-  — re-upload after regenerating the bundle. The agent initializer mints the egress bearer
+- GitHub conversations load the trip-planner agent bundle from the no-TTL KV entry
+  `agent:github-default`, uploaded manually (from `backend-b/`):
+  `wrangler kv key put agent:github-default --path ../dist-bundle/hoth-trip-planner.agent.json --binding STORE --remote`
+  — re-upload after re-running `pnpm bundle` (and after this refactor: the old
+  `bundle:github-default` key is dead). The agent initializer mints the egress bearer
   itself (tenantTag `github`) since these conversations never pass the ingest route.
 - Worker secrets: `GITHUB_WEBHOOK_SECRET` (channel creation throws at module init if
   empty — deploy fails until it exists) and `GITHUB_TOKEN` (fine-grained PAT, Issues
@@ -175,15 +227,15 @@ API_TOKEN=... A_URL=... B_URL=... node scripts/acceptance.mjs
 
 Drives the **deterministic core** (the bounded `/sessions/:id/skill-check` route) so the A/B
 comparison is isolated from LLM nondeterminism. Covers: auth (401 without/with wrong key),
-C1 (A is OOTB/static, no ingest), C2 (B per-session bearers + tenant tags), C3 (single source
-of truth — A image == bundle == B reconstructed, byte-identical), C4 (same result A vs B —
-`opening-times.js` stdout byte-for-byte, plus the injected bearer reaching the echo upstream
-while the container sends none), C5 (uniqueness guard + fail-closed egress), plus clean-base
-and hostile-bundle checks.
+C1 (A is OOTB/static, no agent ingest), C2 (B per-session bearers + tenant tags), C3 (single
+source of truth — A image == bundle == B reconstructed, byte-identical), C4 (same result A
+vs B — `opening-times.js` stdout byte-for-byte, plus the injected bearer reaching the echo
+upstream while the container sends none), C5 (uniqueness guard + fail-closed egress), plus
+clean-base, zero-skill-agent, and hostile-bundle checks.
 
 ## Verified results
 
-All 23 acceptance checks pass against the deployed Workers, and both backends drive the LLM
+All 26 acceptance checks pass against the deployed Workers, and both backends drive the LLM
 end-to-end with the identical `activate_skill → read → bash` sequence and matching opening
 times. Two wiring findings and the egress HTTP-vs-HTTPS caveat are recorded in
 [`hoth-poc-plan.md`](./hoth-poc-plan.md) §7.

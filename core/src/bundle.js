@@ -1,12 +1,7 @@
 /**
- * Dynamic skill bundle format (plan §5) and server-side validation of
- * untrusted bundles (plan §8). One JSON string carries every file.
- *
- * @typedef {Object} SkillBundle
- * @property {string} skillName  lowercase/hyphens, <=64, matches skill dir name
- * @property {string} version    content hash of the files
- * @property {string} baseImage  toolchain the skill needs; selects the Sandbox binding (§16)
- * @property {Record<string, string>} files  rel-path -> utf-8 content (must include SKILL.md)
+ * Shared bundle validation primitives (plan §8): per-skill file-map checks,
+ * path safety, size caps, and the baseImage -> Sandbox binding resolver.
+ * The agent-level bundle format that composes these lives in ./agent.js.
  */
 
 export const BUNDLE_LIMITS = {
@@ -15,66 +10,55 @@ export const BUNDLE_LIMITS = {
   maxTotalBytes: 1024 * 1024,
 };
 
-const SKILL_NAME_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+/** Naming rule shared by agent names and skill names (folder-name charset). */
+export const SKILL_NAME_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 /**
- * Validate an untrusted bundle before any reconstruction (plan §8):
- * reject `..`, absolute paths, backslashes, resolve-outside-dir;
- * size/count caps; required SKILL.md; skill-name shape.
+ * Validate one skill's files map (rel-path -> utf-8 content): reject `..`,
+ * absolute paths, backslashes; per-file/per-skill caps; required SKILL.md;
+ * ustar entry-name limit for the tar the provisioner will build.
  *
- * @param {unknown} raw
- * @returns {SkillBundle} the validated bundle (same object, narrowed)
+ * @param {unknown} files
+ * @param {{ label?: string, tarPrefix?: string }} [options] label for error
+ *   messages; tarPrefix is prepended to each rel-path in the ustar name check
+ * @returns {number} total content bytes across the map
  */
-export function validateBundle(raw) {
-  if (typeof raw === 'string') raw = JSON.parse(raw);
-  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
-    throw new BundleValidationError('bundle must be a JSON object');
-  }
-  const bundle = /** @type {Record<string, unknown>} */ (raw);
-
-  const skillName = bundle.skillName;
-  if (typeof skillName !== 'string' || skillName.length === 0 || skillName.length > 64 || !SKILL_NAME_RE.test(skillName)) {
-    throw new BundleValidationError('skillName must be lowercase letters/numbers/hyphens, 1-64 chars, no leading/trailing/consecutive hyphens');
-  }
-  if (typeof bundle.version !== 'string' || bundle.version.length === 0 || bundle.version.length > 128) {
-    throw new BundleValidationError('version must be a non-empty string');
-  }
-  if (typeof bundle.baseImage !== 'string' || bundle.baseImage.length === 0 || bundle.baseImage.length > 64) {
-    throw new BundleValidationError('baseImage must be a non-empty string');
-  }
-
-  const files = bundle.files;
+export function validateFilesMap(files, options = {}) {
+  const label = options.label ?? 'bundle';
+  const tarPrefix = options.tarPrefix ?? '';
   if (files === null || typeof files !== 'object' || Array.isArray(files)) {
-    throw new BundleValidationError('files must be an object of relPath -> content');
+    throw new BundleValidationError(`${label}: files must be an object of relPath -> content`);
   }
   const entries = Object.entries(files);
-  if (entries.length === 0) throw new BundleValidationError('files must not be empty');
+  if (entries.length === 0) throw new BundleValidationError(`${label}: files must not be empty`);
   if (entries.length > BUNDLE_LIMITS.maxFiles) {
-    throw new BundleValidationError(`too many files (${entries.length} > ${BUNDLE_LIMITS.maxFiles})`);
+    throw new BundleValidationError(`${label}: too many files (${entries.length} > ${BUNDLE_LIMITS.maxFiles})`);
   }
   if (!Object.prototype.hasOwnProperty.call(files, 'SKILL.md')) {
-    throw new BundleValidationError('bundle must contain SKILL.md at its root');
+    throw new BundleValidationError(`${label}: must contain SKILL.md at its root`);
   }
 
   let total = 0;
   const seen = new Set();
   for (const [relPath, content] of entries) {
     validateRelPath(relPath);
+    if (utf8Length(tarPrefix + relPath) > 100) {
+      throw new BundleValidationError(`${label}: path too long for tar entry: ${tarPrefix}${relPath}`);
+    }
     const canonical = relPath.split('/').filter(Boolean).join('/');
-    if (seen.has(canonical)) throw new BundleValidationError(`duplicate path after normalization: ${relPath}`);
+    if (seen.has(canonical)) throw new BundleValidationError(`${label}: duplicate path after normalization: ${relPath}`);
     seen.add(canonical);
-    if (typeof content !== 'string') throw new BundleValidationError(`file content must be a string: ${relPath}`);
+    if (typeof content !== 'string') throw new BundleValidationError(`${label}: file content must be a string: ${relPath}`);
     const bytes = utf8Length(content);
     if (bytes > BUNDLE_LIMITS.maxFileBytes) {
-      throw new BundleValidationError(`file too large: ${relPath} (${bytes} > ${BUNDLE_LIMITS.maxFileBytes})`);
+      throw new BundleValidationError(`${label}: file too large: ${relPath} (${bytes} > ${BUNDLE_LIMITS.maxFileBytes})`);
     }
     total += bytes;
   }
   if (total > BUNDLE_LIMITS.maxTotalBytes) {
-    throw new BundleValidationError(`bundle too large (${total} > ${BUNDLE_LIMITS.maxTotalBytes})`);
+    throw new BundleValidationError(`${label}: too large (${total} > ${BUNDLE_LIMITS.maxTotalBytes})`);
   }
-
-  return /** @type {SkillBundle} */ (bundle);
+  return total;
 }
 
 /** Reject any path that could resolve outside the skill directory. */

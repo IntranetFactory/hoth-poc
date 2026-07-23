@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 /**
- * Node smoke test (plan §2/§11.7): proves the core skill flow —
- * bundle → validate → provision (reconstruct) → discoverable layout →
- * script executes and calls the API — runs with ZERO Cloudflare present.
+ * Node smoke test (plan §2/§11.7): proves the core agent-bundle flow —
+ * scan agents/ → bundle (JSONC config + INSTRUCTIONS.md + skills) → validate →
+ * provision (reconstruct) → discoverable layout → script executes and calls
+ * the API — runs with ZERO Cloudflare present.
  *
  * The sandbox seam is satisfied by a local-fs adapter (Node fs + child
  * shell), state is in-memory, and there is no egress broker: the "API" is a
@@ -16,17 +17,18 @@ import { promisify } from 'node:util';
 // Child processes that call back into the in-process echo server must run
 // async — a sync exec blocks the event loop and deadlocks the server.
 const execFile = promisify(execFileCb);
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { createBundleFromDir } from '../core/src/node.js';
-import { provisionSkill } from '../core/src/provision.js';
-import { validateBundle, BundleValidationError } from '../core/src/bundle.js';
+import { createAgentBundleFromDir, scanAgentsDir } from '../core/src/node.js';
+import { provisionAgentSkills } from '../core/src/provision.js';
+import { normalizeModelSpecifier, validateAgentBundle } from '../core/src/agent.js';
+import { BundleValidationError } from '../core/src/bundle.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const skillDir = join(here, '..', 'backend-a', 'skills', 'hoth-trip-planner');
+const agentDir = join(here, '..', 'agents', 'hoth-trip-planner');
 
 let failures = 0;
 function check(name, ok, extra = '') {
@@ -36,13 +38,16 @@ function check(name, ok, extra = '') {
 
 // --- local sandbox adapter over a temp "workspace" (the sandbox seam) -----
 const workspace = mkdtempSync(join(tmpdir(), 'hoth-smoke-'));
+let rpcCount = 0;
 const localSandbox = {
   async writeFile(path, content) {
+    rpcCount++;
     const real = join(workspace, path.replace(/^\//, ''));
     mkdirSync(dirname(real), { recursive: true });
     writeFileSync(real, content, 'utf-8');
   },
   async exec(command) {
+    rpcCount++;
     // Rebase the absolute container paths onto the temp workspace and run
     // through a POSIX shell (Git Bash ships one on Windows).
     const rebased = command
@@ -70,45 +75,88 @@ const safeParse = (s) => { try { return JSON.parse(s); } catch { return null; } 
 await new Promise((resolve) => echo.listen(0, '127.0.0.1', resolve));
 const echoUrl = `http://127.0.0.1:${echo.address().port}/post`;
 
+// Scratch agents/ tree for the scanner/JSONC/zero-skill checks.
+const scratchAgents = mkdtempSync(join(tmpdir(), 'hoth-agents-'));
+
 try {
   // 1. bundle + round-trip is exercised by the bundler; here: create + validate
-  const bundle = createBundleFromDir(skillDir);
-  check('bundle created & valid', bundle.skillName === 'hoth-trip-planner' && Object.keys(bundle.files).length >= 4);
+  const bundle = createAgentBundleFromDir(agentDir);
+  check(
+    'agent bundle created & valid',
+    bundle.agentName === 'hoth-trip-planner' && Object.keys(bundle.skills.planner ?? {}).length >= 4,
+  );
+  check(
+    'instructions merged from INSTRUCTIONS.md',
+    bundle.instructions === readFileSync(join(agentDir, 'INSTRUCTIONS.md'), 'utf-8').trim(),
+  );
 
-  // 2. hostile bundles rejected before reconstruction (plan §8/§13)
+  // 2. model prefix rule (decided): known provider as-is, else openrouter/
+  check('normalize: unqualified gets openrouter/ prefix', normalizeModelSpecifier('deepseek/deepseek-v4-flash') === 'openrouter/deepseek/deepseek-v4-flash');
+  check('normalize: openrouter/ kept as-is', normalizeModelSpecifier('openrouter/x/y') === 'openrouter/x/y');
+  check('normalize: custom/ kept as-is', normalizeModelSpecifier('custom/my-model') === 'custom/my-model');
+
+  // 3. agents/ scanner + JSONC config: comments/trailing commas parse; a
+  //    folder without agent.jsonc is skipped, not an error.
+  const jsoncAgent = join(scratchAgents, 'commented-agent');
+  mkdirSync(jsoncAgent, { recursive: true });
+  writeFileSync(
+    join(jsoncAgent, 'agent.jsonc'),
+    '{\n  // line comment\n  "instructions": "Scratch agent.", /* block */\n  "model": "deepseek/deepseek-v4-flash",\n}\n',
+    'utf-8',
+  );
+  mkdirSync(join(scratchAgents, 'no-config'), { recursive: true });
+  const scan = scanAgentsDir(scratchAgents);
+  check('scanAgentsDir: agent.jsonc folders found, others skipped', scan.agents.join() === 'commented-agent' && scan.skipped.join() === 'no-config');
+  const jsoncBundle = createAgentBundleFromDir(jsoncAgent);
+  check('JSONC config parsed (comments + trailing comma) & model normalized', jsoncBundle.model === 'openrouter/deepseek/deepseek-v4-flash');
+
+  // 4. hostile bundles rejected before reconstruction (plan §8/§13)
   for (const [label, mutate] of [
-    ['path traversal ..', (b) => ({ ...b, files: { ...b.files, '../evil.md': 'x' } })],
-    ['absolute path', (b) => ({ ...b, files: { ...b.files, '/etc/passwd': 'x' } })],
-    ['backslash path', (b) => ({ ...b, files: { ...b.files, 'refs\\evil.md': 'x' } })],
-    ['missing SKILL.md', (b) => ({ ...b, files: { 'references/only.md': 'x' } })],
-    ['oversize file', (b) => ({ ...b, files: { ...b.files, 'big.md': 'x'.repeat(300 * 1024) } })],
+    ['path traversal ..', (b) => ({ ...b, skills: { ...b.skills, planner: { ...b.skills.planner, '../evil.md': 'x' } } })],
+    ['absolute path', (b) => ({ ...b, skills: { ...b.skills, planner: { ...b.skills.planner, '/etc/passwd': 'x' } } })],
+    ['backslash path', (b) => ({ ...b, skills: { ...b.skills, planner: { ...b.skills.planner, 'refs\\evil.md': 'x' } } })],
+    ['missing per-skill SKILL.md', (b) => ({ ...b, skills: { planner: { 'references/only.md': 'x' } } })],
+    ['oversize file', (b) => ({ ...b, skills: { ...b.skills, planner: { ...b.skills.planner, 'big.md': 'x'.repeat(300 * 1024) } } })],
+    ['bad skill name', (b) => ({ ...b, skills: { ...b.skills, 'Bad Name': { 'SKILL.md': 'x' } } })],
+    ['too many skills', (b) => ({ ...b, skills: Object.fromEntries(Array.from({ length: 17 }, (_, i) => [`s${i}`, { 'SKILL.md': 'x' }])) })],
+    ['missing instructions', (b) => ({ ...b, instructions: '' })],
+    ['bad modelBaseUrl', (b) => ({ ...b, modelBaseUrl: 'ftp://nope' })],
   ]) {
     let rejected = false;
-    try { validateBundle(mutate(structuredClone(bundle))); } catch (err) { rejected = err instanceof BundleValidationError; }
+    try { validateAgentBundle(mutate(structuredClone(bundle))); } catch (err) { rejected = err instanceof BundleValidationError; }
     check(`hostile bundle rejected: ${label}`, rejected);
   }
 
-  // 3. clean base: skills dir starts empty (absent)
-  check('clean base (no skill before provision)', !existsSync(join(workspace, 'workspace/.agents/skills/hoth-trip-planner')));
+  // 5. clean base: skills dir starts empty (absent)
+  check('clean base (no skill before provision)', !existsSync(join(workspace, 'workspace/.agents/skills/planner')));
 
-  // 4. provision: absent → reconstructed
-  const first = await provisionSkill(localSandbox, bundle);
+  // 6. provision: absent → reconstructed (all skills, one tar, 2 RPCs)
+  rpcCount = 0;
+  const first = await provisionAgentSkills(localSandbox, bundle);
   check('provision reconstructs on absent dir', first.reconstructed === true);
+  check('provision is 2 RPCs regardless of skill count', rpcCount === 2, `rpcs=${rpcCount}`);
 
-  // 5. byte-identical reconstruction (single-source check, C3 shape)
+  // 7. byte-identical reconstruction (single-source check, C3 shape)
   let identical = true;
-  for (const [relPath, content] of Object.entries(bundle.files)) {
-    const real = join(workspace, 'workspace/.agents/skills/hoth-trip-planner', ...relPath.split('/'));
-    if (!existsSync(real) || readFileSync(real, 'utf-8') !== content) identical = false;
+  for (const [skillName, files] of Object.entries(bundle.skills)) {
+    for (const [relPath, content] of Object.entries(files)) {
+      const real = join(workspace, 'workspace/.agents/skills', skillName, ...relPath.split('/'));
+      if (!existsSync(real) || readFileSync(real, 'utf-8') !== content) identical = false;
+    }
   }
   check('reconstructed files byte-identical to bundle', identical);
 
-  // 6. immutable-per-id: second provision is a no-op (present)
-  const second = await provisionSkill(localSandbox, bundle);
+  // 8. immutable-per-id: second provision is a no-op (present)
+  const second = await provisionAgentSkills(localSandbox, bundle);
   check('re-provision is absent→write only (no overwrite)', second.reconstructed === false);
 
-  // 7. the skill script runs from the reconstructed dir and calls the API
-  const scriptPath = join(workspace, 'workspace/.agents/skills/hoth-trip-planner/scripts/opening-times.js');
+  // 9. zero-skill agent (semantius-admin shape): valid, provisions nothing
+  rpcCount = 0;
+  const zero = await provisionAgentSkills(localSandbox, jsoncBundle);
+  check('zero-skill agent provisions with 0 RPCs', zero.reconstructed === false && zero.skillDirs.length === 0 && rpcCount === 0, `rpcs=${rpcCount}`);
+
+  // 10. the skill script runs from the reconstructed dir and calls the API
+  const scriptPath = join(workspace, 'workspace/.agents/skills/planner/scripts/opening-times.js');
   const { stdout } = await execFile(
     process.execPath,
     [scriptPath, '--sites=Echo Base Thermal Springs', '--from=2026-08-01', '--to=2026-08-02'],
@@ -120,7 +168,7 @@ try {
     parsed[0]?.site_id === 'echo_base_thermal_springs' && parsed[0]?.opening_times?.length === 2,
   );
 
-  // 8. the script sent NO Authorization header (zero-trust shape)
+  // 11. the script sent NO Authorization header (zero-trust shape)
   const { stdout: debugOut } = await execFile(
     process.execPath,
     [scriptPath, '--sites=Echo Base Thermal Springs', '--from=2026-08-01', '--to=2026-08-01', '--debug-echo'],
@@ -131,6 +179,7 @@ try {
 } finally {
   echo.close();
   rmSync(workspace, { recursive: true, force: true });
+  rmSync(scratchAgents, { recursive: true, force: true });
 }
 
 console.log(failures === 0 ? '\nnode smoke test: ALL PASS (zero Cloudflare imports)' : `\nnode smoke test: ${failures} FAILURES`);

@@ -5,7 +5,6 @@
   "type": "module",
   "description": "Hoth POC backend A — skill BAKED INTO the container image (hard-coded / OOTB Flue)",
   "scripts": {
-    "bundle": "node scripts/bundle.mjs",
     "dev": "vite dev --port 3583",
     "build": "vite build",
     "deploy": "vite build && wrangler deploy"

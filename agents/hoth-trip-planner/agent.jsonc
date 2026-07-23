@@ -1,0 +1,5 @@
+{
+  "$schema": "../agent.schema.json"
+  // instructions come from INSTRUCTIONS.md in this folder; model falls back to
+  // the backend's env-derived default (LLM_PROVIDER/LLM_MODEL).
+}

@@ -64,7 +64,7 @@ function fakeKv(initial = {}) {
   };
 }
 
-const bundleJson = JSON.stringify({ skillName: 'trip-planner', version: 'v1', baseImage: 'node', files: { 'SKILL.md': '# hi' } });
+const bundleJson = JSON.stringify({ agentName: 'trip-planner', version: 'v1', baseImage: 'node', instructions: 'hi', skills: { planner: { 'SKILL.md': '# hi' } } });
 
 await (async function run() {
   // --- kvGroupOf ---------------------------------------------------------
@@ -75,18 +75,18 @@ await (async function run() {
   const kv = fakeKv({
     'tag:c2': 'tenant-9f',
     'bearer:c1': 'hoth-bearer-1',
-    'bundle:9f8a': bundleJson,
+    'agent:9f8a': bundleJson,
     'bearer:c2': 'hoth-bearer-2',
     'session:9f8a': JSON.stringify({ id: '9f8a', backend: 'b' }),
   });
   const keys = await listKvEntries(kv);
   check('listKvEntries collects all pages', keys.length === 5, `got ${keys.length}`);
-  check('listKvEntries sorts by name', keys[0].name === 'bearer:c1' && keys.at(-1).name === 'tag:c2');
-  check('listKvEntries assigns groups', keys.find((k) => k.name === 'bundle:9f8a')?.group === 'bundle');
+  check('listKvEntries sorts by name', keys[0].name === 'agent:9f8a' && keys.at(-1).name === 'tag:c2');
+  check('listKvEntries assigns groups', keys.find((k) => k.name === 'agent:9f8a')?.group === 'agent');
 
   // --- readKvEntry: json / opaque / missing ------------------------------
-  const bundleEntry = await readKvEntry(kv, 'bundle:9f8a');
-  check('readKvEntry parses JSON', bundleEntry?.json?.skillName === 'trip-planner');
+  const bundleEntry = await readKvEntry(kv, 'agent:9f8a');
+  check('readKvEntry parses JSON', bundleEntry?.json?.agentName === 'trip-planner');
   check('readKvEntry reports size', bundleEntry?.size === bundleJson.length);
   const bearerEntry = await readKvEntry(kv, 'bearer:c1');
   check('readKvEntry leaves opaque strings unparsed', bearerEntry?.json === null && bearerEntry?.value === 'hoth-bearer-1');
@@ -139,8 +139,8 @@ await (async function run() {
   check('listCollectionRecords(runs) is gone in v2', (await listCollectionRecords('runs', deps)) === null);
 
   // --- generic record detail ---------------------------------------------
-  const kvDetail = await readCollectionRecord('kv', 'bundle:9f8a', deps);
-  check('readCollectionRecord(kv) returns parsed value', kvDetail?.kind === 'kv' && kvDetail?.json?.skillName === 'trip-planner');
+  const kvDetail = await readCollectionRecord('kv', 'agent:9f8a', deps);
+  check('readCollectionRecord(kv) returns parsed value', kvDetail?.kind === 'kv' && kvDetail?.json?.agentName === 'trip-planner');
   const sessDetail = await readCollectionRecord('sessions', '9f8a', deps);
   check('readCollectionRecord(sessions) returns the session', sessDetail?.kind === 'session' && sessDetail?.session?.backend === 'b');
   check('readCollectionRecord(kv) missing -> null', (await readCollectionRecord('kv', 'nope', deps)) === null);

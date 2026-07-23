@@ -1,12 +1,13 @@
 /**
- * Backend B HTTP app — the dynamic-bundle ingest surface (plan §6/§8).
+ * Backend B HTTP app — the multi-agent dynamic-bundle ingest surface
+ * (plan §6/§8).
  *
- * POST /sessions/:id/skills:
- *  (a) validates the untrusted bundle before anything else,
+ * POST /sessions/:id/agent:
+ *  (a) validates the untrusted agent bundle before anything else,
  *  (b) stores it keyed by session id (read back by the agent initializer),
  *  (c) mints a per-session bearer + tenant tag and writes the
  *      KV[containerId] mapping the outbound handler resolves at egress,
- *  (d) pre-warms: eagerly boots the container and reconstructs the skill so
+ *  (d) pre-warms: eagerly boots the container and reconstructs the skills so
  *      the 1-3 s cold boot overlaps the user typing (plan §15 P1).
  *
  * The route STORES the bundle — reconstruction also lives in the initializer,
@@ -18,7 +19,7 @@ import { getSandbox } from '@cloudflare/sandbox';
 import { createAgentRouter } from '@flue/runtime/routing';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { Hoth } from './agents/hoth';
+import { Main } from './agents/main';
 import {
   apiKeyGuard,
   BundleValidationError,
@@ -31,9 +32,9 @@ import {
   adminCollections,
   listCollectionRecords,
   readCollectionRecord,
-  provisionSkill,
+  provisionAgentSkills,
   resolveSandboxBinding,
-  validateBundle,
+  validateAgentBundle,
   STREAM_PROTOCOL_HEADERS,
 } from '@hoth/core';
 import { channel } from './channels/github';
@@ -86,20 +87,20 @@ app.get('/admin/collections/:cid/record', async (c) => {
   return c.json(record);
 });
 
-app.post('/sessions/:id/skills', async (c) => {
+app.post('/sessions/:id/agent', async (c) => {
   const id = c.req.param('id');
   if (!isValidSessionId(id)) return c.json({ error: 'invalid session id' }, 400);
 
   // Session-id uniqueness guard: a bundle is immutable per id (plan §6).
-  if (await c.env.STORE.get(`bundle:${id}`)) {
-    return c.json({ error: 'session id already has a bundle; a changed skill is a new session id' }, 409);
+  if (await c.env.STORE.get(`agent:${id}`)) {
+    return c.json({ error: 'session id already has an agent bundle; a changed agent is a new session id' }, 409);
   }
 
   let bundle;
   let tenantTag: string;
   try {
     const body = (await c.req.json()) as { bundle?: unknown; tenantTag?: unknown };
-    bundle = validateBundle(body.bundle ?? body);
+    bundle = validateAgentBundle(body.bundle ?? body);
     tenantTag =
       typeof body.tenantTag === 'string' && /^[a-z0-9-]{1,64}$/.test(body.tenantTag)
         ? body.tenantTag
@@ -118,7 +119,7 @@ app.post('/sessions/:id/skills', async (c) => {
   const containerId = namespace.idFromName(id).toString();
 
   const bearer = `hoth-b-bearer-${id.slice(0, 8)}-${crypto.randomUUID()}`;
-  await c.env.STORE.put(`bundle:${id}`, JSON.stringify(bundle), { expirationTtl: BUNDLE_TTL_SECONDS });
+  await c.env.STORE.put(`agent:${id}`, JSON.stringify(bundle), { expirationTtl: BUNDLE_TTL_SECONDS });
   await kvSecretBroker(c.env.STORE).put(containerId, bearer, tenantTag);
 
   // Index the session so the data browser can enumerate conversations without
@@ -127,22 +128,24 @@ app.post('/sessions/:id/skills', async (c) => {
     backend: 'b',
     containerId,
     tenantTag,
-    skillName: bundle.skillName,
+    agentName: bundle.agentName,
     version: bundle.version,
+    skills: Object.keys(bundle.skills),
     createdAt: new Date().toISOString(),
   }).catch(() => {});
 
   // Pre-warm + eager reconstruction (plan §8/§15 P1). The initializer will
-  // find the dir present and no-op; on a later cold container it re-creates.
-  const provision = await provisionSkill(getSandbox(namespace, id), bundle);
+  // find the dirs present and no-op; on a later cold container it re-creates.
+  const provision = await provisionAgentSkills(getSandbox(namespace, id), bundle);
 
   return c.json({
     ok: true,
     backend: 'b',
     sessionId: id,
     containerId,
-    skillName: bundle.skillName,
+    agentName: bundle.agentName,
     version: bundle.version,
+    skills: Object.keys(bundle.skills),
     tenantTag,
     reconstructed: provision.reconstructed,
   });
@@ -164,13 +167,13 @@ app.post('/sessions/:id/skill-check', async (c) => {
     throw err;
   }
 
-  const raw = await c.env.STORE.get(`bundle:${id}`);
+  const raw = await c.env.STORE.get(`agent:${id}`);
   const binding = raw ? resolveSandboxBinding((JSON.parse(raw) as { baseImage: string }).baseImage) : 'Sandbox';
   const namespace = (c.env as unknown as Record<string, DurableObjectNamespace>)[binding];
   const sandbox = getSandbox(namespace, id);
   let reconstructed = false;
   if (raw) {
-    reconstructed = (await provisionSkill(sandbox, validateBundle(raw))).reconstructed;
+    reconstructed = (await provisionAgentSkills(sandbox, validateAgentBundle(raw))).reconstructed;
   }
 
   const result = await sandbox.exec(command, { cwd: '/workspace' });
@@ -182,14 +185,14 @@ app.delete('/sessions/:id', async (c) => {
   if (!isValidSessionId(id)) return c.json({ error: 'invalid session id' }, 400);
   const containerId = c.env.Sandbox.idFromName(id).toString();
   await kvSecretBroker(c.env.STORE).remove(containerId);
-  await c.env.STORE.delete(`bundle:${id}`);
+  await c.env.STORE.delete(`agent:${id}`);
   await removeSessionIndex(c.env.STORE, id).catch(() => {});
   return c.json({ ok: true });
 });
 
-// Explicit v2 mount (no auto-router): serves POST/GET /agents/hoth/:id and
-// the conversation stream — the same URL surface the beta flue() router
-// exposed for this agent, so the frontend needs no path changes.
-app.route('/agents/hoth', createAgentRouter(Hoth));
+// Explicit v2 mount (no auto-router): serves POST/GET /agents/main/:id and
+// the conversation stream. `main` is the generic multi-agent host — which
+// agent a session runs comes from its stored bundle, not the route.
+app.route('/agents/main', createAgentRouter(Main));
 
 export default app;

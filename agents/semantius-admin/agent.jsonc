@@ -1,0 +1,4 @@
+{
+  "$schema": "../agent.schema.json",
+  "instructions": "You are helping users to manage their Semantius data platform."
+}

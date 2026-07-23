@@ -1,5 +1,5 @@
 ---
-name: hoth-trip-planner
+name: planner
 description: Plan leisure trips on the planet Hoth. Use this skill whenever the user asks about visiting, skiing, spa bathing, or booking activities on Hoth, or mentions Hoth resorts, operators, or regions. It knows the sites in each region and how to fetch live opening times from the Hoth Tourism API.
 ---
 
@@ -26,7 +26,7 @@ never guess them. Run it with the exact site names from the reference file
 (comma-separated), plus the date range, using exactly this command shape:
 
 ```
-node .agents/skills/hoth-trip-planner/scripts/opening-times.js --sites="Echo Base Thermal Springs,Wampa Ridge Spa" --from=2026-08-01 --to=2026-08-03 2>&1
+node .agents/skills/planner/scripts/opening-times.js --sites="Echo Base Thermal Springs,Wampa Ridge Spa" --from=2026-08-01 --to=2026-08-03 2>&1
 ```
 
 Always keep the `2>&1` at the end so errors are visible. The script prints a

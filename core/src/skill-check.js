@@ -15,7 +15,7 @@ import { SKILLS_DIR } from './provision.js';
 const SITE_RE = /^[A-Za-z0-9 ]{1,64}$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-const SKILL_NAME = 'hoth-trip-planner';
+const SKILL_NAME = 'planner';
 const SCRIPT = `${SKILLS_DIR}/${SKILL_NAME}/scripts/opening-times.js`;
 const SKILL_DIR = `${SKILLS_DIR}/${SKILL_NAME}`;
 

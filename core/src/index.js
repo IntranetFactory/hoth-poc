@@ -1,13 +1,22 @@
 export {
-  validateBundle,
+  validateFilesMap,
   validateRelPath,
   BundleValidationError,
   BUNDLE_LIMITS,
+  SKILL_NAME_RE,
   BASE_IMAGE_BINDINGS,
   resolveSandboxBinding,
 } from './bundle.js';
+export {
+  validateAgentBundle,
+  validateAgentConfig,
+  mergeInstructions,
+  normalizeModelSpecifier,
+  KNOWN_MODEL_PROVIDERS,
+  AGENT_LIMITS,
+} from './agent.js';
 export { makeTar, makeTarGz, toBase64 } from './tar.js';
-export { provisionSkill, SKILLS_DIR } from './provision.js';
+export { provisionAgentSkills, SKILLS_DIR } from './provision.js';
 export { buildSkillCheckCommand, SkillCheckError } from './skill-check.js';
 export { apiKeyGuard } from './auth.js';
 export {

@@ -45,15 +45,40 @@ Flue core (host-agnostic):  bundle → provision skill → discovery → run →
 
 ```
 c:\dev\hoth-poc\                      pnpm workspace; conventional package names
-├─ backend-a/   Flue+CF Worker — skill BAKED INTO the container image (hard-coded / OOTB).
-├─ backend-b/   Flue+CF Worker — skill INJECTED at runtime from the one-JSON-string bundle.
-└─ frontend/    React + Vite — one chat, New-session button, A/B backend dropdown.
+├─ agents/      SOURCE OF TRUTH for every agent: agents/<name>/{agent.jsonc (REQUIRED),
+│               INSTRUCTIONS.md (optional, appended), skills/<skill>/…}. Schema:
+│               agents/agent.schema.json. Folders without agent.jsonc are skipped.
+├─ backend-a/   Flue+CF Worker — the FIXED hoth-trip-planner agent; skills BAKED INTO the
+│               container image (hard-coded / OOTB).
+├─ backend-b/   Flue+CF Worker — MULTI-AGENT: the whole agent (instructions + model +
+│               skills) is INJECTED at runtime from the one-JSON-string agent bundle.
+└─ frontend/    React + Vite — one chat, New-session button, A/B backend dropdown, agent
+                dropdown when B is selected.
 ```
 
 - pnpm; React + Vite. Both backends deploy to Cloudflare Workers (Workers Paid — Containers enabled).
-- `backend-a/` owns the canonical skill folder (source of truth) **and** the bundler CLI.
+- The bundler CLI is top-level (`scripts/bundle.mjs`, root `pnpm bundle`) — not backend-specific.
 - Both backends are `--target cloudflare`; both use **Cloudflare Sandbox** (microVM backend) via
   `getSandbox(env.Sandbox, id)` + `cloudflareSandbox(...)` from `@flue/runtime/cloudflare`.
+
+### agents/ folder & agent.jsonc
+
+Each agent is one folder under `agents/`. `agent.jsonc` is REQUIRED (JSONC — comments and
+trailing commas allowed; parsed by `jsonc-parser` in `@hoth/core/node`); a folder without it
+is skipped by the bundler with a warning. Properties (schema `agents/agent.schema.json`,
+unknown keys rejected — future keys like an egress allow list are added to schema +
+`validateAgentConfig` together):
+
+- `instructions` — optional string; an optional `INSTRUCTIONS.md` next to the config is
+  **appended**; at least one of the two must yield non-empty text.
+- `model` — optional; prefix rule: first path segment ∈ {openrouter, custom, cloudflare} →
+  as-is, else `openrouter/` is prepended. Missing → the backend's env default (§ LLM).
+- `model_base_url` — optional http(s) URL; per-agent transport override (auth stays the
+  worker-wide `LLM_API_KEY`).
+
+Skills live in `agents/<name>/skills/<skill>/` (0..16; each needs a `SKILL.md` whose
+frontmatter `name` matches the skill dir name). `hoth-trip-planner` has one skill,
+`planner`; `semantius-admin` has zero (valid).
 
 ## 4. The skill: `hoth-trip-planner`
 
@@ -61,7 +86,7 @@ Fictional (planet Hoth) so the model cannot use training knowledge and must read
 the script.
 
 ```
-skills/hoth-trip-planner/
+agents/hoth-trip-planner/skills/planner/
 ├─ SKILL.md
 ├─ references/{echo-basin.md, north-ridge.md}   # sites + operator + region per region
 └─ scripts/opening-times.js                       # calls the (mock) Hoth tourism API, returns times
@@ -69,11 +94,11 @@ skills/hoth-trip-planner/
 
 - Sites = ski resorts & spas of two fictional operators: **Rebel Alliance Leisure**, **Imperial
   Wellness**. E.g. *Echo Base Thermal Springs*, *Wampa Ridge Spa*, *North Ridge Piste Lodge*.
-- `SKILL.md`: frontmatter `name: hoth-trip-planner` (lowercase/hyphens, ≤64, **matches dir name**),
+- `SKILL.md`: frontmatter `name: planner` (lowercase/hyphens, ≤64, **matches dir name**),
   non-empty `description` (≤1024). Body: read the region reference for candidate sites, then run the
   script for opening times — with the exact `node … 2>&1` command baked in (adapter/exec surfaces no
   stderr otherwise). Script referenced by real cwd-relative path
-  (`.agents/skills/hoth-trip-planner/scripts/opening-times.js`); Flue has no `${CLAUDE_SKILL_DIR}`.
+  (`.agents/skills/planner/scripts/opening-times.js`); Flue has no `${CLAUDE_SKILL_DIR}`.
 - `opening-times.js`: input site names + `from`/`to`. It **calls the mock Hoth tourism API** (an HTTP
   echo endpoint) with the request details and **no Authorization header**; the outbound handler injects
   the per-tenant bearer (§7). The echo response returns what the upstream received (proving the bearer
@@ -81,23 +106,32 @@ skills/hoth-trip-planner/
   opening_times:[{date,open,close}…] }`. Runs on `node`. (If a skill ships `.ts` scripts, the base
   image needs a TS runner such as `tsx`; POC uses `.js`.)
 
-## 5. Bundle format & bundler (backend B)
+## 5. Agent-bundle format & bundler (backend B)
 
-The dynamic bundle is **one JSON string** carrying every file:
+The dynamic **agent bundle** is **one JSON string** carrying the whole agent — merged
+instructions, optional model overrides, and every file of every skill:
 
 ```jsonc
-{ "skillName":"hoth-trip-planner", "version":"<content-hash>", "baseImage":"node",
-  "files": { "SKILL.md":"…", "references/echo-basin.md":"…", "references/north-ridge.md":"…",
-             "scripts/opening-times.js":"…" } }
+{ "agentName":"hoth-trip-planner", "version":"<content-hash>", "baseImage":"node",
+  "instructions":"…agent.jsonc instructions + INSTRUCTIONS.md…",
+  "model":"openrouter/…",            // optional, pre-normalized (prefix rule, §3)
+  "modelBaseUrl":"https://…",        // optional
+  "skills": { "planner": { "SKILL.md":"…", "references/echo-basin.md":"…",
+                           "references/north-ridge.md":"…", "scripts/opening-times.js":"…" } } }
 ```
 
-- **Bundler** (`backend-a`, `pnpm bundle`): walks `skills/hoth-trip-planner/` → one JSON string, utf-8.
-  **Same folder** A bakes into its image → **skill defined once**, two consumers.
-- **`baseImage`** names the toolchain the skill needs; it selects the Sandbox binding at runtime (§16).
+- **Bundler** (top-level `scripts/bundle.mjs`, root `pnpm bundle`): scans `agents/`, builds one bundle
+  per agent folder that has `agent.jsonc`. **Same skills folder** A bakes into its image → **agent
+  defined once**, all consumers derive from it (B's bundles, A's Dockerfile COPY + generated meta,
+  the frontend agent list).
+- **`baseImage`** names the toolchain the agent needs; it selects the Sandbox binding at runtime (§16).
   The POC defaults it to one value — the field exists now so 3-4 images later is a config change, not a
   rewrite.
-- Round-trip assert: bundle → reconstruct → byte-identical to source folder.
-- **A bundle is immutable per session `id`** — a changed skill is a new `id` (§6), so reconstruction is
+- Round-trip assert: each bundled skill → reconstruct → byte-identical to its source folder.
+- Limits (`core/src/agent.js`): ≤16 skills; per skill ≤64 files / ≤256 KiB file / ≤1 MiB; ≤4 MiB per
+  agent; instructions ≤64 KiB; tar entry names (`<skill>/<relPath>`) ≤100 bytes (ustar). **Zero skills
+  is valid** — the bundle still carries instructions/model; nothing is provisioned.
+- **A bundle is immutable per session `id`** — a changed agent is a new `id` (§6), so reconstruction is
   always absent→write, never overwrite.
 
 ## 6. Backends
@@ -110,7 +144,7 @@ The dynamic bundle is **one JSON string** carrying every file:
 self-heals on every cold container. The ingest route (B) only **stores** the bundle — it must **not** be
 the reconstruction site (a cold container at prompt time would then have no skill). Pin a single absolute
 **cwd = `/workspace`**; reconstruct into and discover from exactly
-`/workspace/.agents/skills/hoth-trip-planner`.
+`/workspace/.agents/skills/<skill>` (one dir per skill in the bundle, e.g. `planner`).
 
 **Identity (in scope — isolation depends on it).** `id` must be **server-minted, globally unique, and
 never reused** (UUID, or `hash(tenant+session)` per §9). The Sandbox's
@@ -120,26 +154,48 @@ silently reuses another session's container and bearer. **A bundle is immutable 
 skill ⇒ a new `id`. Reconstruction is therefore always **absent→write**, never in-place overwrite,
 which removes any mixed-version window against concurrent session materialization.
 
-**Backend A — hard-coded / OOTB.** Dockerfile `FROM cloudflare/sandbox:<v>` + `COPY skills/hoth-trip-planner
-/workspace/.agents/skills/hoth-trip-planner`. Initializer: `getSandbox(env.Sandbox, id)` (skill already
-in the image) → discovery. `skills:[]` empty, no bundle. **A still needs the bearer-mapping write** (§7):
-it has no ingest route, so seed `KV[containerId] = bearer` in a `POST …/provision` (or at session
-create) before the first prompt. A is a **static agent** — one **fixed** bearer/config for all sessions
-(not per-tenant). "OOTB" is scoped to **skill delivery** (baked image + discovery, no bundle/ingest); A
-shares the egress/secret seam with B **by design** so the *same skill* runs identically (§13 C4). This
-maps to the contract exactly: A = static setting, B = per-session setting.
+**Backend A — hard-coded / OOTB (fixed agent `hoth`).** Dockerfile `FROM cloudflare/sandbox:<v>` +
+`COPY agents/hoth-trip-planner/skills /workspace/.agents/skills` (dir contents → one dir per skill,
+e.g. `planner`). Instructions + model come from the bundler-generated meta
+(`backend-a/src/generated/agent.json`, imported at build time — `pnpm bundle` runs before build in the
+root deploy). Initializer: `getSandbox(env.Sandbox, id)` (skills already in the image) → discovery.
+No bundle at runtime. **A still needs the bearer-mapping write** (§7): it has no ingest route, so seed
+`KV[containerId] = bearer` in a `POST …/provision` (or at session create) before the first prompt. A is
+a **static agent** — one **fixed** bearer/config for all sessions (not per-tenant). "OOTB" is scoped to
+**skill delivery** (baked image + discovery, no bundle/ingest); A shares the egress/secret seam with B
+**by design** so the *same skills* run identically (§13 C4). This maps to the contract exactly:
+A = static setting, B = per-session setting.
 
-**Backend B — dynamic bundle.** Base Dockerfile is **skill-free** — only the CF sandbox base + `node`;
-`/workspace/.agents/skills` is **empty at boot**. This is a hard requirement, not an aside: if any skill
-file were baked in, B would be discovering a baked copy instead of testing dynamic injection. Verified by
-the §13 clean-base test (a B container **before** injection finds no skill). Ingest `POST …/:id/skills`
-(a) **validates** the bundle (§8), (b) stores it keyed by `id` (KV, read back by the initializer via an
-`env` binding), (c) writes `KV[containerId] = bearer`. Initializer reads the stored bundle for `id` and
-reconstructs into `/workspace/.agents/skills/hoth-trip-planner` **when the dir is absent** (cold
-container) → discovery. Immutable-per-id ⇒ "absent" is the only case; no overwrite.
+**Backend B — dynamic bundle, MULTI-AGENT (generic agent `main`).** One Flue agent hosts every agent:
+which agent a session runs is decided by the **agent bundle** POSTed at session creation, not by code.
+Base Dockerfile is **skill-free** — only the CF sandbox base + `node`; `/workspace/.agents/skills` is
+**empty at boot**. This is a hard requirement, not an aside: if any skill file were baked in, B would be
+discovering a baked copy instead of testing dynamic injection. Verified by the §13 clean-base test (a B
+container **before** injection finds no skill). Ingest `POST …/sessions/:id/agent` (a) **validates** the
+agent bundle (§8), (b) stores it as `agent:<id>` (KV, read back by the initializer via an `env`
+binding), (c) writes `KV[containerId] = bearer`. The `useAgentStart` callback reads the stored bundle,
+persists the agent meta (instructions, model, modelBaseUrl, sandbox binding — `usePersistentState`),
+reconstructs every skill into `/workspace/.agents/skills/<skill>` **when absent** (cold container, one
+tar for all skills, still 2 RPCs) → discovery.
 
-Both backends run the **same skill** and the **same outbound handler**. The only difference is how the
-skill reached the container: image-baked (A) vs runtime-reconstructed (B).
+**First-turn identity (verified on the deployed runtime):** state written in `useAgentStart` lands only
+AFTER the submission's first model turn — the submission pipeline rebuilds the system prompt *before*
+the start seam runs (`rebuildCanonicalContext` → `runAgentStartHooks` in
+`@flue/runtime` conversation-stream-store), and Flue then narrates "System instructions updated." and
+re-renders for later turns. So the persisted meta alone would leave turn 1 on generic default
+instructions. Fix: the **instance-creating send carries the agent meta as `initialData`** (read in the
+render via `useInitialData()`, present from the first render on) — the frontend's B client injects it
+on every `send` (Flue records it only at creation, ignores it afterwards), and the GitHub channel
+passes it on `dispatch` from the stored `agent:github-default` bundle. Resolution order in the render:
+persisted meta (KV-authoritative — also picks up a re-seeded github-default) → creation seed → generic
+default. Per-agent model:
+`agentModelSpecifier()` registers a dedicated one-model Pi provider `agent-<name>` when the bundle
+overrides model/base URL; otherwise the env default applies. Immutable-per-id ⇒ "absent" is the only
+case; no overwrite. The agent was renamed `hoth` → `main` (wrangler migration v4 — pre-rename
+conversations were abandoned, accepted for the POC).
+
+Both backends run the **same skills** and the **same outbound handler**. The only difference is how the
+agent reached the container: image-baked + build-time meta (A) vs runtime-reconstructed bundle (B).
 
 ## 7. Zero-trust secrets & egress (the outbound handler)
 
@@ -232,10 +288,14 @@ sessions. Request isolation is the POC's proven property; tenant authz is the la
 ## 10. Frontend (React + Vite)
 
 `@flue/react` + `@flue/sdk`. **Two `FlueClient`s** (base URL fixed at construction) selected via
-`useFlueAgent({ client })`. State: `sessionId`, backend. **New session** → mint id; for B, `POST …/skills`
-with the one-JSON-string bundle, await 2xx, then open chat. Render `messages[].parts`. POC caveat:
-browser-as-bundle-origin inverts the production trust model (server-side tenant store); fine for the
-POC, not the prod seam (§12).
+`useFlueAgent({ client })`; the conversation mount differs per backend (`/agents/hoth` on A,
+`/agents/main` on B). State: `sessionId`, backend, and — when B is selected — the chosen agent
+(a second dropdown; hidden for A, which is fixed to hoth-trip-planner). The agent list is the bundler
+output glob-imported from `frontend/src/generated/agents/*.json`: re-running `pnpm bundle` after adding
+an `agents/<name>/` folder adds it to the dropdown with no code change. **New session** → mint id; for
+B, `POST …/sessions/:id/agent` with the selected one-JSON-string agent bundle, await 2xx, then open
+chat. Render `messages[].parts`. POC caveat: browser-as-bundle-origin inverts the production trust
+model (server-side tenant store); fine for the POC, not the prod seam (§12).
 
 ## 11. Build order
 
@@ -274,8 +334,8 @@ Each test names a concrete **oracle**, not prose. LLM nondeterminism is isolated
 comparison by driving the deterministic core directly. Grouped by the five contract criteria.
 
 **C1 — A is OOTB / static (skill delivery vanilla).**
-- A's skill is served **purely from the image**: `POST <backend-a>/…/skills` returns 404/405 (no ingest),
-  and an exec/fs trace of an A turn shows **zero writes** under `/workspace/.agents/skills`.
+- A's skills are served **purely from the image**: `POST <backend-a>/sessions/:id/agent` returns 404/405
+  (no ingest), and an exec/fs trace of an A turn shows **zero writes** under `/workspace/.agents/skills`.
 - Recorded scope: A keeps the egress/secret seam but with a **single static** bearer/config ("static
   agent"); "OOTB" = skill delivery only (§6). Not a violation — required so the same skill runs on both.
 
@@ -298,7 +358,7 @@ comparison by driving the deterministic core directly. Grouped by the five contr
 - **Egress trace:** in both, the echo upstream received `Authorization: Bearer <that session's key>` and
   the container itself sent none.
 - **LLM trace (corroboration, seeded harness — fixed model, temp 0, fixed user turn):** same skill
-  activated (`hoth-trip-planner`), same reference read (`references/echo-basin.md`), same script path,
+  activated (`planner`), same reference read (`references/echo-basin.md`), same script path,
   matching `site_id` surfaced. Prose text is **not** compared. The direct-exec byte-compare is the real
   oracle; the trace is soft corroboration (temp-0 is not hard determinism). One unseeded chat is **not**
   a test.
@@ -317,8 +377,11 @@ comparison by driving the deterministic core directly. Grouped by the five contr
   `context.ts:88-94`). Positive control: after injection the same `find` shows the expected file set.
 - **Reuse & cold-recovery:** turn-2 within `sleepAfter` reuses the warm container; after a cold container
   (>10 min idle / eviction) B **re-materializes** and still works.
-- **Hostile bundle:** `..` / symlink / resolve-outside-dir / oversize / missing SKILL.md rejected before
-  reconstruction.
+- **Hostile bundle:** `..` / symlink / resolve-outside-dir / oversize / missing per-skill SKILL.md /
+  missing instructions / too many skills rejected before reconstruction (`validateAgentBundle`).
+- **Zero-skill agent:** a bundle with `skills: {}` (e.g. semantius-admin) ingests OK, provisions
+  nothing (`reconstructed === false`, sandbox file count 0), and the agent still answers from its
+  bundled instructions.
 - **Egress (`enableInternet:false` + `allowedHosts`):** echo host reachable via the handler; raw-socket
   **and** HTTP(S) to `169.254.169.254`, an arbitrary public IP, and RFC-1918 fail on **ports 80/443 and
   via DNS**, not just other ports (an HTTP-only test gives a false pass).

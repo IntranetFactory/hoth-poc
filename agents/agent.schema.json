@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Hoth agent configuration (agent.jsonc)",
+  "description": "Per-agent config in agents/<name>/agent.jsonc. The file is REQUIRED: folders without it are skipped by the bundler. Skills live in agents/<name>/skills/<skill>/; an optional INSTRUCTIONS.md next to this file is appended to `instructions`.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "instructions": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Agent instructions. An optional INSTRUCTIONS.md in the same folder is appended after this text. At least one of the two must yield non-empty instructions."
+    },
+    "model": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Model specifier. If the first path segment is a known provider (openrouter, custom, cloudflare) the value is used as-is; otherwise 'openrouter/' is prepended (e.g. 'deepseek/deepseek-v4-flash' -> 'openrouter/deepseek/deepseek-v4-flash'). Omit to use the backend's env-derived default (LLM_PROVIDER/LLM_MODEL)."
+    },
+    "model_base_url": {
+      "type": "string",
+      "pattern": "^https?://",
+      "description": "Overrides the provider base URL for this agent (an OpenAI-compatible endpoint). Auth still uses the backend's LLM_API_KEY secret."
+    }
+  }
+}

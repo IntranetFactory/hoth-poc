@@ -5,9 +5,10 @@
  * Ingress: the channel verifies X-Hub-Signature-256 against
  * GITHUB_WEBHOOK_SECRET over the raw delivery bytes before the handler runs,
  * so its /webhook route is mounted OUTSIDE the API-key guard in app.ts.
- * `issues.opened` and `issue_comment.created` dispatch to the Hoth agent
- * keyed by the canonical instance id (one conversation per issue), so
- * follow-up comments continue the same session.
+ * `issues.opened` and `issue_comment.created` dispatch to the Main agent
+ * (running the shared `agent:github-default` bundle) keyed by the canonical
+ * instance id (one conversation per issue), so follow-up comments continue
+ * the same session.
  *
  * Egress: the agent posts replies through the comment_on_github_issue tool
  * (Octokit + GITHUB_TOKEN). Every reply carries AGENT_MARKER and the webhook
@@ -20,7 +21,7 @@ import { defineTool, dispatch } from '@flue/runtime';
 import { putSessionIndex, readSession } from '@hoth/core';
 import { Octokit } from '@octokit/rest';
 import * as v from 'valibot';
-import { Hoth } from '../agents/hoth';
+import { Main } from '../agents/main';
 
 const secrets = env as Record<string, string | undefined>;
 
@@ -32,7 +33,7 @@ export const channel = createGitHubChannel({
   async webhook({ delivery }) {
     if (delivery.name === 'issues' && delivery.payload.action === 'opened') {
       const { repository, issue } = delivery.payload;
-      await dispatchToHoth(
+      await dispatchToAgent(
         { owner: repository.owner.login, repo: repository.name, issueNumber: issue.number },
         {
           type: 'github.issue.opened',
@@ -49,7 +50,7 @@ export const channel = createGitHubChannel({
       if (comment.user?.type === 'Bot' || comment.body.includes(AGENT_MARKER)) {
         return { status: 'skipped: agent or bot comment' };
       }
-      await dispatchToHoth(
+      await dispatchToAgent(
         { owner: repository.owner.login, repo: repository.name, issueNumber: issue.number },
         {
           type: 'github.issue_comment.created',
@@ -63,7 +64,7 @@ export const channel = createGitHubChannel({
   },
 });
 
-async function dispatchToHoth(
+async function dispatchToAgent(
   ref: GitHubIssueRef,
   input: { type: string; deliveryId: string } & Record<string, unknown>,
 ): Promise<void> {
@@ -71,7 +72,11 @@ async function dispatchToHoth(
   // v2 dispatch takes the agent function and a structured signal message. The
   // body carries the same JSON event the beta passed as raw input, so the
   // agent instructions ("each input is a JSON event") keep working unchanged.
-  await dispatch(Hoth, {
+  // initialData seeds the instance-creating dispatch with the default agent
+  // bundle's meta so even the FIRST model turn runs on its instructions —
+  // state persisted in useAgentStart lands only after turn 1. Flue ignores it
+  // on every later dispatch to the same instance.
+  await dispatch(Main, {
     id,
     message: {
       kind: 'signal',
@@ -79,8 +84,30 @@ async function dispatchToHoth(
       body: JSON.stringify(input),
       attributes: { deliveryId: input.deliveryId },
     },
+    ...(await githubAgentSeed()),
   });
   await indexConversation(id, ref).catch(() => {});
+}
+
+/** `{ initialData }` from the shared agent:github-default bundle, or {}. */
+async function githubAgentSeed(): Promise<{ initialData?: Record<string, unknown> }> {
+  try {
+    const raw = await (env as unknown as { STORE: KVNamespace }).STORE.get('agent:github-default');
+    if (!raw) return {};
+    const bundle = JSON.parse(raw) as Record<string, unknown>;
+    return {
+      initialData: {
+        agentName: bundle.agentName,
+        version: bundle.version,
+        baseImage: bundle.baseImage,
+        instructions: bundle.instructions,
+        ...(bundle.model ? { model: bundle.model } : {}),
+        ...(bundle.modelBaseUrl ? { modelBaseUrl: bundle.modelBaseUrl } : {}),
+      },
+    };
+  } catch {
+    return {};
+  }
 }
 
 /**

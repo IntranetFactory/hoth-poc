@@ -3,13 +3,15 @@
   "name": "hoth-poc-backend-b",
   "compatibility_date": "2026-06-01",
   "compatibility_flags": ["nodejs_compat"],
-  // Flue v2 generates one DO class per agent (FlueHothAgent, from the `hoth`
-  // identity). The beta-era FlueRegistry class is gone in v2, hence the v3
-  // deleted_classes entry (append-only history).
+  // Flue v2 generates one DO class per agent (Flue<Pascal(identity)>Agent).
+  // The beta-era FlueRegistry class is gone in v2, hence the v3
+  // deleted_classes entry (append-only history). v4: the agent was renamed
+  // hoth -> main (generic multi-agent host), abandoning pre-rename sessions.
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["FlueRegistry", "FlueHothAgent"] },
     { "tag": "v2", "new_sqlite_classes": ["HothSandbox"] },
-    { "tag": "v3", "deleted_classes": ["FlueRegistry"] }
+    { "tag": "v3", "deleted_classes": ["FlueRegistry"] },
+    { "tag": "v4", "new_sqlite_classes": ["FlueMainAgent"], "deleted_classes": ["FlueHothAgent"] }
   ],
   "durable_objects": {
     "bindings": [{ "name": "Sandbox", "class_name": "HothSandbox" }]

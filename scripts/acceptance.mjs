@@ -23,7 +23,9 @@ if (!API_TOKEN) {
 }
 const AUTH = { authorization: `Bearer ${API_TOKEN}` };
 
-const bundle = JSON.parse(readFileSync(join(here, '..', 'backend-a', 'dist-bundle', 'hoth-trip-planner.bundle.json'), 'utf-8'));
+const bundle = JSON.parse(readFileSync(join(here, '..', 'dist-bundle', 'hoth-trip-planner.agent.json'), 'utf-8'));
+const zeroSkillBundle = JSON.parse(readFileSync(join(here, '..', 'dist-bundle', 'semantius-admin.agent.json'), 'utf-8'));
+const bundleFileCount = Object.values(bundle.skills).reduce((n, files) => n + Object.keys(files).length, 0);
 
 let failures = 0;
 const results = [];
@@ -62,12 +64,12 @@ async function main() {
   // --- Auth: protected routes reject missing/wrong key ---------------------
   const noKey = await fetch(`${A_URL}/sessions/${uuid()}/provision`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
   check('auth', 'A rejects request with no API key (401)', noKey.status === 401, `status ${noKey.status}`);
-  const badKey = await fetch(`${B_URL}/sessions/${uuid()}/skills`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer wrong' }, body: '{}' });
+  const badKey = await fetch(`${B_URL}/sessions/${uuid()}/agent`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer wrong' }, body: '{}' });
   check('auth', 'B rejects request with wrong API key (401)', badKey.status === 401, `status ${badKey.status}`);
 
-  // --- C1: A is OOTB / static (no ingest route) ---------------------------
-  const aIngest = await post(A_URL, `/sessions/${uuid()}/skills`, { bundle });
-  check('C1', 'A has no skill-ingest route (404/405)', aIngest.status === 404 || aIngest.status === 405, `status ${aIngest.status}`);
+  // --- C1: A is OOTB / static (no agent-ingest route) ---------------------
+  const aIngest = await post(A_URL, `/sessions/${uuid()}/agent`, { bundle });
+  check('C1', 'A has no agent-ingest route (404/405)', aIngest.status === 404 || aIngest.status === 405, `status ${aIngest.status}`);
 
   // --- Provision an A session and a B session -----------------------------
   const aId = uuid();
@@ -75,19 +77,37 @@ async function main() {
   check('C1', 'A provision (static bearer) OK', aProv.status === 200, JSON.stringify(aProv.json).slice(0, 120));
 
   const bId = uuid();
-  const bIngest = await post(B_URL, `/sessions/${bId}/skills`, { bundle, tenantTag: 'tenant-alpha' });
-  check('B-ingest', 'B bundle ingest + reconstruct OK', bIngest.status === 200 && bIngest.json.reconstructed === true, JSON.stringify(bIngest.json).slice(0, 140));
+  const bIngest = await post(B_URL, `/sessions/${bId}/agent`, { bundle, tenantTag: 'tenant-alpha' });
+  check(
+    'B-ingest',
+    'B agent-bundle ingest + reconstruct OK',
+    bIngest.status === 200 &&
+      bIngest.json.reconstructed === true &&
+      bIngest.json.agentName === bundle.agentName &&
+      Array.isArray(bIngest.json.skills) &&
+      bIngest.json.skills.includes('planner'),
+    JSON.stringify(bIngest.json).slice(0, 160),
+  );
 
   // --- Clean-base positive control: B live sandbox now has the file set ---
   const bCount = await post(B_URL, `/sessions/${bId}/skill-check`, { op: 'count-skill-files' });
   const bFileCount = Number((bCount.json.stdout ?? '').trim());
-  check('clean-base', 'B live sandbox has expected file count after injection', bFileCount === Object.keys(bundle.files).length, `count=${bFileCount}`);
+  check('clean-base', 'B live sandbox has expected file count after injection', bFileCount === bundleFileCount, `count=${bFileCount}`);
+
+  // --- Zero-skill agent: valid bundle, nothing to reconstruct -------------
+  const zId = uuid();
+  const zIngest = await post(B_URL, `/sessions/${zId}/agent`, { bundle: zeroSkillBundle, tenantTag: 'tenant-zero' });
+  check('zero-skill', 'B ingests a zero-skill agent (nothing reconstructed)', zIngest.status === 200 && zIngest.json.reconstructed === false && zIngest.json.skills.length === 0, JSON.stringify(zIngest.json).slice(0, 140));
+  const zCount = await post(B_URL, `/sessions/${zId}/skill-check`, { op: 'count-skill-files' });
+  check('zero-skill', 'zero-skill session sandbox holds no skill files', Number((zCount.json.stdout ?? '').trim()) === 0, `count=${(zCount.json.stdout ?? '').trim()}`);
 
   // --- C3: single source of truth (A image == bundle == B reconstructed) --
   // Leg 1 (A image) and clean-base(0) were checked at build time via docker;
   // here we compare the two LIVE sandboxes' hashes to the bundle values.
+  // hash-skill cds into the planner skill dir, so expected keys are ./<rel>
+  // over the planner skill's files.
   const bundleHashes = {};
-  for (const [rel, content] of Object.entries(bundle.files)) {
+  for (const [rel, content] of Object.entries(bundle.skills.planner)) {
     bundleHashes[`./${rel}`] = createHash('sha256').update(content).digest('hex');
   }
   const [aHash, bHash] = await Promise.all([
@@ -129,7 +149,7 @@ async function main() {
 
   // --- C2: two concurrent B sessions get DIFFERENT bearers + tags ---------
   const b2Id = uuid();
-  await post(B_URL, `/sessions/${b2Id}/skills`, { bundle, tenantTag: 'tenant-beta' });
+  await post(B_URL, `/sessions/${b2Id}/agent`, { bundle, tenantTag: 'tenant-beta' });
   const [b1e, b2e] = await Promise.all([
     post(B_URL, `/sessions/${bId}/skill-check`, { ...FIXED, debugEcho: true }),
     post(B_URL, `/sessions/${b2Id}/skill-check`, { ...FIXED, debugEcho: true }),
@@ -139,15 +159,15 @@ async function main() {
   check('C2', 'concurrent B sessions carry different tenant tags', h1?.['x-tenant-tag'] === 'tenant-alpha' && h2?.['x-tenant-tag'] === 'tenant-beta');
 
   // --- C5: uniqueness guard — a reused id is rejected ---------------------
-  const reuse = await post(B_URL, `/sessions/${bId}/skills`, { bundle });
+  const reuse = await post(B_URL, `/sessions/${bId}/agent`, { bundle });
   check('C5', 'B rejects a reused session id (immutable-per-id)', reuse.status === 409, `status ${reuse.status}`);
 
   // --- C5: fail-closed egress — a session with no bearer mapping ----------
   //   Provision the bundle but immediately delete the mapping, then egress.
   const orphanId = uuid();
-  await post(B_URL, `/sessions/${orphanId}/skills`, { bundle, tenantTag: 'tenant-orphan' });
+  await post(B_URL, `/sessions/${orphanId}/agent`, { bundle, tenantTag: 'tenant-orphan' });
   await del(B_URL, orphanId); // removes bearer + bundle
-  await post(B_URL, `/sessions/${orphanId}/skills`, { bundle, tenantTag: 'tenant-orphan2' }).catch(() => {});
+  await post(B_URL, `/sessions/${orphanId}/agent`, { bundle, tenantTag: 'tenant-orphan2' }).catch(() => {});
   // Re-ingest re-adds a bearer, so instead test the pure no-mapping path via A:
   // craft an A session that never provisioned → no bearer mapping.
   const aNoBearer = uuid();
@@ -157,17 +177,18 @@ async function main() {
 
   // --- Hostile bundles rejected before reconstruction (plan §13) ----------
   const hostiles = [
-    ['path traversal', { ...bundle, files: { ...bundle.files, '../evil.md': 'x' } }],
-    ['absolute path', { ...bundle, files: { ...bundle.files, '/etc/passwd': 'x' } }],
-    ['missing SKILL.md', { ...bundle, files: { 'references/only.md': 'x' } }],
+    ['path traversal', { ...bundle, skills: { ...bundle.skills, planner: { ...bundle.skills.planner, '../evil.md': 'x' } } }],
+    ['absolute path', { ...bundle, skills: { ...bundle.skills, planner: { ...bundle.skills.planner, '/etc/passwd': 'x' } } }],
+    ['missing per-skill SKILL.md', { ...bundle, skills: { planner: { 'references/only.md': 'x' } } }],
+    ['missing instructions', { ...bundle, instructions: '' }],
   ];
   for (const [label, bad] of hostiles) {
-    const r = await post(B_URL, `/sessions/${uuid()}/skills`, { bundle: bad });
+    const r = await post(B_URL, `/sessions/${uuid()}/agent`, { bundle: bad });
     check('hostile', `B rejects hostile bundle: ${label}`, r.status === 422, `status ${r.status}`);
   }
 
   // Cleanup best-effort
-  await Promise.all([del(A_URL, aId), del(B_URL, bId), del(B_URL, b2Id), del(B_URL, orphanId)]);
+  await Promise.all([del(A_URL, aId), del(B_URL, bId), del(B_URL, b2Id), del(B_URL, zId), del(B_URL, orphanId)]);
 
   console.log(`\n${failures === 0 ? 'ALL ACCEPTANCE CHECKS PASS' : `${failures} FAILURE(S)`}  (${results.length} checks)`);
   process.exit(failures === 0 ? 0 : 1);

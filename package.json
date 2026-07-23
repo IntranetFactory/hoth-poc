@@ -5,7 +5,7 @@
   "description": "Hoth Trip-Planner POC — proves hard-coded vs dynamic-bundle skill delivery yield identical agent behavior on Flue + Cloudflare Sandbox",
   "type": "module",
   "scripts": {
-    "bundle": "pnpm --filter backend-a bundle",
+    "bundle": "node scripts/bundle.mjs",
     "smoke": "node scripts/node-smoke.mjs",
     "test": "node scripts/admin.test.mjs",
     "dev:a": "pnpm --filter backend-a dev",

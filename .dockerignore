@@ -2,7 +2,7 @@
 # backend-a/ and backend-b/ each set  image_build_context ".."  so their images
 # can COPY the shared semantius CLI from linux-x64/. That makes the whole repo
 # the build context, so exclude everything heavy or irrelevant here — the images
-# only ever COPY  linux-x64/  and  backend-a/skills/ .
+# only ever COPY  linux-x64/  and  agents/hoth-trip-planner/skills/ .
 **/node_modules
 **/.wrangler
 **/.flue-vite

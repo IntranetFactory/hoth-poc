@@ -3,14 +3,19 @@
  * read-only Data browser over everything the backends persist in Cloudflare.
  *
  * Chat: Flue v2 clients are conversation-scoped — one createFlueClient per
- * conversation URL (`<backend>/agents/hoth/<sessionId>`), passed to
- * useFlueAgent({ client }). New session mints a lowercase UUID; for B, POST the
- * one-JSON-string bundle and await the 2xx before opening the chat (seeds the
- * bearer mapping and pre-warms the container); for A, POST the provision route.
+ * conversation URL (`<backend>/agents/<mount>/<sessionId>`; mount is `hoth`
+ * on A, `main` on B), passed to useFlueAgent({ client }). New session mints a
+ * lowercase UUID; for B, pick an agent and POST its one-JSON-string agent
+ * bundle and await the 2xx before opening the chat (seeds the bearer mapping
+ * and pre-warms the container); for A, POST the provision route (A is fixed
+ * to the image-baked hoth-trip-planner agent, so it has no agent selector).
+ * The agent list is the bundler output: `pnpm bundle` emits one JSON per
+ * agents/<name>/ into src/generated/agents/, glob-imported below — a new
+ * agent folder appears here with no code change.
  *
  * Data browser: a generic collection → record → detail tree with breadcrumbs.
  * Each backend exposes its stores as "collections" via /admin/collections:
- *   - kv        — the raw KV namespace (bundles, bearers, tags, session index)
+ *   - kv        — the raw KV namespace (agent bundles, bearers, tags, session index)
  *   - sessions  — one record per conversation id (from the session index); the
  *                 detail streams the live conversation held in the Flue agent
  *                 Durable Object (its SQLite conversation stream)
@@ -26,16 +31,67 @@ import { createFlueClient } from '@flue/sdk';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { AgentChat } from './AgentChat';
-import hothBundle from './generated/hoth-bundle.json';
+
+type AgentBundle = {
+  agentName: string;
+  version: string;
+  baseImage: string;
+  instructions: string;
+  model?: string;
+  modelBaseUrl?: string;
+  skills: Record<string, Record<string, string>>;
+};
+
+// Every agents/<name>/ folder the bundler built — eager glob import, so a new
+// agent is picked up by re-running `pnpm bundle`, with no code change here.
+const agentModules = import.meta.glob('./generated/agents/*.json', {
+  eager: true,
+  import: 'default',
+}) as Record<string, AgentBundle>;
+const AGENTS: Record<string, AgentBundle> = Object.fromEntries(
+  Object.values(agentModules).map((bundle) => [bundle.agentName, bundle]),
+);
+const AGENT_NAMES = Object.keys(AGENTS).sort();
+
+/**
+ * Instance-creation seed for backend B conversations: the bundle meta minus
+ * the skill files. Sent as `initialData` with EVERY send (Flue consults it
+ * only on the send that creates the instance, ignores it afterwards), so the
+ * agent's very first model turn already runs with the right instructions and
+ * model — state written in useAgentStart only lands after turn 1.
+ */
+type AgentSeed = {
+  agentName: string;
+  version: string;
+  baseImage: string;
+  instructions: string;
+  model?: string;
+  modelBaseUrl?: string;
+};
+const AGENT_SEEDS: Record<string, AgentSeed> = Object.fromEntries(
+  Object.values(AGENTS).map((b) => [
+    b.agentName,
+    {
+      agentName: b.agentName,
+      version: b.version,
+      baseImage: b.baseImage,
+      instructions: b.instructions,
+      ...(b.model ? { model: b.model } : {}),
+      ...(b.modelBaseUrl ? { modelBaseUrl: b.modelBaseUrl } : {}),
+    },
+  ]),
+);
 
 const BACKENDS = {
   a: {
-    label: 'Backend A — image-baked skill (OOTB)',
+    label: 'Backend A — image-baked skills (OOTB)',
     baseUrl: import.meta.env.VITE_BACKEND_A_URL ?? 'http://localhost:3583',
+    agentMount: 'hoth',
   },
   b: {
-    label: 'Backend B — dynamic bundle',
+    label: 'Backend B — dynamic bundle (multi-agent)',
     baseUrl: import.meta.env.VITE_BACKEND_B_URL ?? 'http://localhost:3584',
+    agentMount: 'main',
   },
 } as const;
 
@@ -45,25 +101,31 @@ type View = 'chat' | 'data' | 'chats';
 const API_KEY_STORAGE = 'hoth-api-key';
 
 /** The one conversation URL a v2 FlueClient addresses (mount + session id). */
-const conversationUrl = (base: string, sessionId: string) =>
-  `${base}/agents/hoth/${encodeURIComponent(sessionId)}`;
+const conversationUrl = (backend: BackendKey, sessionId: string) =>
+  `${BACKENDS[backend].baseUrl}/agents/${BACKENDS[backend].agentMount}/${encodeURIComponent(sessionId)}`;
 
-/** Conversation-scoped client (v2: no deployment-wide client, no name/id). */
-function useConversationClient(base: string, apiKey: string, sessionId?: string) {
-  return useMemo(
-    () =>
-      sessionId
-        ? createFlueClient({ url: conversationUrl(base, sessionId), token: apiKey })
-        : undefined,
-    [base, apiKey, sessionId],
-  );
+/**
+ * Conversation-scoped client (v2: no deployment-wide client, no name/id).
+ * With a seed (backend B), `send` always carries it as `initialData` — only
+ * the instance-creating send records it, so this is idempotent by contract.
+ */
+function useConversationClient(backend: BackendKey, apiKey: string, sessionId?: string, seed?: AgentSeed) {
+  return useMemo(() => {
+    if (!sessionId) return undefined;
+    const client = createFlueClient({ url: conversationUrl(backend, sessionId), token: apiKey });
+    if (!seed) return client;
+    return {
+      ...client,
+      send: (opts: Parameters<typeof client.send>[0]) => client.send({ ...opts, initialData: seed }),
+    };
+  }, [backend, apiKey, sessionId, seed]);
 }
 
 /** A request from the Chat tab to jump straight to a session in the browser. */
 type InspectTarget = { backend: BackendKey; sessionId: string };
 
 /** The Chat tab's currently-ready session, shared with the Chats (A/B) tab. */
-type ActiveSession = { backend: BackendKey; sessionId: string };
+type ActiveSession = { backend: BackendKey; sessionId: string; agentName?: string };
 
 // The active tab lives in the URL hash (#chat / #data / #chats) rather than in
 // plain state, so it's deep-linkable and browser back/forward works. The hash
@@ -186,6 +248,8 @@ function ChatView({
   onActiveSession: (session?: ActiveSession) => void;
 }) {
   const [backend, setBackend] = useState<BackendKey>('a');
+  // Backend B only: which agents/<name>/ bundle a new session delivers.
+  const [agentName, setAgentName] = useState<string>(AGENT_NAMES[0] ?? '');
   const [sessionId, setSessionId] = useState<string>();
   const [phase, setPhase] = useState<'idle' | 'preparing' | 'ready' | 'error'>('idle');
   const [detail, setDetail] = useState('');
@@ -193,12 +257,21 @@ function ChatView({
   // an existing conversation can be re-opened (simulating a reconnect/refresh).
   const [sessionInput, setSessionInput] = useState('');
 
-  const client = useConversationClient(BACKENDS[backend].baseUrl, apiKey, sessionId);
+  const client = useConversationClient(
+    backend,
+    apiKey,
+    sessionId,
+    backend === 'b' ? AGENT_SEEDS[agentName] : undefined,
+  );
 
   // Report the ready session up to App so the "Chats (A/B)" tab can mirror it.
   useEffect(() => {
-    onActiveSession(sessionId && phase === 'ready' ? { backend, sessionId } : undefined);
-  }, [backend, sessionId, phase, onActiveSession]);
+    onActiveSession(
+      sessionId && phase === 'ready'
+        ? { backend, sessionId, ...(backend === 'b' ? { agentName } : {}) }
+        : undefined,
+    );
+  }, [backend, agentName, sessionId, phase, onActiveSession]);
 
   async function newSession(nextBackend: BackendKey) {
     const id = crypto.randomUUID();
@@ -209,11 +282,11 @@ function ChatView({
       const base = BACKENDS[nextBackend].baseUrl;
       const url =
         nextBackend === 'b'
-          ? `${base}/sessions/${id}/skills`
+          ? `${base}/sessions/${id}/agent`
           : `${base}/sessions/${id}/provision`;
       const body =
         nextBackend === 'b'
-          ? JSON.stringify({ bundle: hothBundle, tenantTag: `tenant-${id.slice(0, 8)}` })
+          ? JSON.stringify({ bundle: AGENTS[agentName], tenantTag: `tenant-${id.slice(0, 8)}` })
           : '{}';
       const response = await fetch(url, {
         method: 'POST',
@@ -227,7 +300,7 @@ function ChatView({
       setPhase('ready');
       setDetail(
         nextBackend === 'b'
-          ? `bundle ${payload.skillName}@${payload.version} → ${payload.reconstructed ? 'reconstructed' : 'already present'}; tag ${payload.tenantTag}`
+          ? `agent ${payload.agentName}@${payload.version} · ${payload.skills?.length ?? 0} skill(s) → ${payload.reconstructed ? 'reconstructed' : 'already present'}; tag ${payload.tenantTag}`
           : 'static provision OK',
       );
     } catch (err) {
@@ -268,9 +341,34 @@ function ChatView({
             </option>
           ))}
         </select>
-        <button onClick={() => newSession(backend)} disabled={phase === 'preparing' || !apiKey}>
+        {backend === 'b' ? (
+          // B is the multi-agent backend: pick which agent bundle a NEW
+          // session delivers. A is fixed to the image-baked agent — no choice.
+          <select
+            value={agentName}
+            onChange={(event) => {
+              setAgentName(event.target.value);
+              setSessionId(undefined);
+              setPhase('idle');
+              setDetail('');
+            }}
+          >
+            {AGENT_NAMES.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        ) : null}
+        <button
+          onClick={() => newSession(backend)}
+          disabled={phase === 'preparing' || !apiKey || (backend === 'b' && !agentName)}
+        >
           {phase === 'preparing' ? 'Preparing…' : 'New session'}
         </button>
+        {backend === 'b' && AGENT_NAMES.length === 0 ? (
+          <span className="status">no agents built — run `pnpm bundle`</span>
+        ) : null}
       </div>
       <div className="controls">
         <input
@@ -382,9 +480,10 @@ function DualChatView({ apiKey, active }: { apiKey: string; active?: ActiveSessi
   // useFlueAgent still opens its own stream over it, so the panels remain
   // independent replicas.
   const client = useConversationClient(
-    BACKENDS[active?.backend ?? 'a'].baseUrl,
+    active?.backend ?? 'a',
     apiKey,
     active?.sessionId,
+    active?.backend === 'b' && active.agentName ? AGENT_SEEDS[active.agentName] : undefined,
   );
 
   if (!active || !client) {
@@ -688,14 +787,14 @@ function RecordDetail({
         isSession ? (
           // For a session the raw form is what's actually persisted: the KV
           // session-index record plus the agent DO's conversation snapshot.
-          <RawSession base={base} apiKey={apiKey} sessionId={record.id} session={(detail as { session: Record<string, unknown> }).session} />
+          <RawSession backend={backend} apiKey={apiKey} sessionId={record.id} session={(detail as { session: Record<string, unknown> }).session} />
         ) : (
           <pre className="value">{JSON.stringify(detail, null, 2)}</pre>
         )
       ) : detail.kind === 'kv' ? (
         <KvValue value={(detail as { value: string }).value} json={(detail as { json: unknown }).json} />
       ) : isSession ? (
-        <SessionDetail base={base} apiKey={apiKey} backend={backend} session={(detail as { session: Record<string, unknown> }).session} sessionId={record.id} />
+        <SessionDetail apiKey={apiKey} backend={backend} session={(detail as { session: Record<string, unknown> }).session} sessionId={record.id} />
       ) : (
         <pre className="value">{JSON.stringify(detail, null, 2)}</pre>
       )}
@@ -711,12 +810,12 @@ function RecordDetail({
  * because it is the truthful state.
  */
 function RawSession({
-  base,
+  backend,
   apiKey,
   sessionId,
   session,
 }: {
-  base: string;
+  backend: BackendKey;
   apiKey: string;
   sessionId: string;
   session: Record<string, unknown>;
@@ -728,7 +827,7 @@ function RawSession({
     let cancelled = false;
     setConversation(undefined);
     setError(undefined);
-    fetch(`${base}/agents/hoth/${encodeURIComponent(sessionId)}`, {
+    fetch(conversationUrl(backend, sessionId), {
       headers: { authorization: `Bearer ${apiKey}` },
     })
       .then((res) => res.json())
@@ -737,7 +836,7 @@ function RawSession({
     return () => {
       cancelled = true;
     };
-  }, [base, apiKey, sessionId]);
+  }, [backend, apiKey, sessionId]);
 
   return (
     <pre className="value">
@@ -761,13 +860,11 @@ function KvValue({ value, json }: { value: string; json: unknown }) {
 }
 
 function SessionDetail({
-  base,
   apiKey,
   backend,
   session,
   sessionId,
 }: {
-  base: string;
   apiKey: string;
   backend: BackendKey;
   session: Record<string, unknown>;
@@ -784,14 +881,14 @@ function SessionDetail({
         ))}
       </dl>
       <h3 className="subhead">Conversation (live, from the agent Durable Object)</h3>
-      <ConversationView base={base} apiKey={apiKey} backend={backend} sessionId={sessionId} />
+      <ConversationView apiKey={apiKey} backend={backend} sessionId={sessionId} />
     </div>
   );
 }
 
 /** Reads the stored conversation (Flue agent DO SQLite) for a session id. */
-function ConversationView({ base, apiKey, sessionId }: { base: string; apiKey: string; backend: BackendKey; sessionId: string }) {
-  const client = useConversationClient(base, apiKey, sessionId);
+function ConversationView({ apiKey, backend, sessionId }: { apiKey: string; backend: BackendKey; sessionId: string }) {
+  const client = useConversationClient(backend, apiKey, sessionId);
   // Read-only catch-up: 'long-poll' reaches the stored state without holding the
   // SSE stream open (no live generation to follow when browsing).
   const agent = useFlueAgent({ client, live: 'long-poll' });
@@ -808,27 +905,33 @@ function ConversationView({ base, apiKey, sessionId }: { base: string; apiKey: s
   );
 }
 
-type Bundle = { skillName: string; version: string; baseImage: string; files: Record<string, string> };
-
-function asBundle(json: unknown): Bundle | null {
+function asBundle(json: unknown): AgentBundle | null {
   if (!json || typeof json !== 'object') return null;
   const b = json as Record<string, unknown>;
-  if (typeof b.skillName === 'string' && typeof b.version === 'string' && b.files && typeof b.files === 'object') {
-    return b as Bundle;
+  if (typeof b.agentName === 'string' && typeof b.version === 'string' && b.skills && typeof b.skills === 'object') {
+    return b as AgentBundle;
   }
   return null;
 }
 
-function BundleView({ bundle }: { bundle: Bundle }) {
-  const files = Object.entries(bundle.files);
-  const [open, setOpen] = useState<string>(files[0]?.[0]);
+function BundleView({ bundle }: { bundle: AgentBundle }) {
+  // Flatten every skill's files to `<skill>/<path>` entries for the file list.
+  const files = useMemo(
+    () =>
+      Object.entries(bundle.skills).flatMap(([skillName, skillFiles]) =>
+        Object.entries(skillFiles).map(([path, content]): [string, string] => [`${skillName}/${path}`, content]),
+      ),
+    [bundle],
+  );
+  const contents = useMemo(() => new Map(files), [files]);
+  const [open, setOpen] = useState<string | undefined>(files[0]?.[0]);
   return (
     <div className="bundle">
       <dl className="meta">
         <div className="meta-row">
-          <dt>skill</dt>
+          <dt>agent</dt>
           <dd>
-            <code>{bundle.skillName}</code>@<code>{bundle.version}</code>
+            <code>{bundle.agentName}</code>@<code>{bundle.version}</code>
           </dd>
         </div>
         <div className="meta-row">
@@ -837,9 +940,31 @@ function BundleView({ bundle }: { bundle: Bundle }) {
             <code>{bundle.baseImage}</code>
           </dd>
         </div>
+        {bundle.model ? (
+          <div className="meta-row">
+            <dt>model</dt>
+            <dd>
+              <code>{bundle.model}</code>
+            </dd>
+          </div>
+        ) : null}
+        {bundle.modelBaseUrl ? (
+          <div className="meta-row">
+            <dt>modelBaseUrl</dt>
+            <dd>
+              <code>{bundle.modelBaseUrl}</code>
+            </dd>
+          </div>
+        ) : null}
         <div className="meta-row">
-          <dt>files</dt>
-          <dd>{files.length}</dd>
+          <dt>instructions</dt>
+          <dd>{bundle.instructions}</dd>
+        </div>
+        <div className="meta-row">
+          <dt>skills</dt>
+          <dd>
+            {Object.keys(bundle.skills).join(', ') || '(none)'} — {files.length} file{files.length === 1 ? '' : 's'}
+          </dd>
         </div>
       </dl>
       <div className="filelist">
@@ -851,11 +976,11 @@ function BundleView({ bundle }: { bundle: Bundle }) {
             title={path}
           >
             <span className="keyrow-label">{path}</span>
-            <span className="count">{bundle.files[path].length}</span>
+            <span className="count">{contents.get(path)?.length ?? 0}</span>
           </button>
         ))}
       </div>
-      {open ? <pre className="value">{bundle.files[open]}</pre> : null}
+      {open ? <pre className="value">{contents.get(open)}</pre> : null}
     </div>
   );
 }

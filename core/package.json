@@ -7,5 +7,8 @@
   "exports": {
     ".": "./src/index.js",
     "./node": "./src/node.js"
+  },
+  "dependencies": {
+    "jsonc-parser": "^3.3.1"
   }
 }

@@ -19,7 +19,7 @@
 /** The stable prefixes this app writes, with human labels for the browser. */
 export const KV_GROUPS = {
   session: 'Session index (one record per agent session/conversation id)',
-  bundle: 'Skill bundle (one immutable bundle per session id)',
+  agent: 'Agent bundle (one immutable bundle per session id)',
   bearer: 'Per-container egress bearer (containerId -> token)',
   tag: 'Per-container tenant tag (containerId -> tenant)',
 };
@@ -27,7 +27,7 @@ export const KV_GROUPS = {
 export const SESSION_KEY_PREFIX = 'session:';
 export const SESSION_TTL_SECONDS = 24 * 60 * 60;
 
-/** Group a key by the segment before its first ':' (e.g. `bundle:abc` -> `bundle`). */
+/** Group a key by the segment before its first ':' (e.g. `agent:abc` -> `agent`). */
 export function kvGroupOf(name) {
   const i = name.indexOf(':');
   return i === -1 ? '(ungrouped)' : name.slice(0, i);
@@ -189,7 +189,7 @@ export async function readSession(kv, id) {
 /** The collections a backend exposes, given its KV namespace name. */
 export function adminCollections(kvName) {
   return [
-    { id: 'kv', label: `KV · ${kvName}`, kind: 'kv', description: 'Raw key/value entries (bundles, bearers, tags, session index).' },
+    { id: 'kv', label: `KV · ${kvName}`, kind: 'kv', description: 'Raw key/value entries (agent bundles, bearers, tags, session index).' },
     { id: 'sessions', label: 'Agent sessions', kind: 'sessions', description: 'One record per conversation id (from the session index).' },
   ];
 }

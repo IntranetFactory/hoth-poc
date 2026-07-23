@@ -44,4 +44,6 @@ ENV SEMANTIUS_API_KEY=__sak__ \
 ENV NODE_EXTRA_CA_CERTS=/etc/cloudflare/certs/cloudflare-containers-ca.crt
 
 # The whole point of backend A: skill delivery via image, no runtime writes.
-COPY backend-a/skills/hoth-trip-planner /workspace/.agents/skills/hoth-trip-planner
+# COPY of a directory copies its CONTENTS, so every skills/<skill>/ subfolder of
+# the fixed hoth-trip-planner agent lands as /workspace/.agents/skills/<skill>.
+COPY agents/hoth-trip-planner/skills /workspace/.agents/skills
