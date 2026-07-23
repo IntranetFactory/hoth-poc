@@ -91,6 +91,81 @@ The **frontend never bakes the key in** — you type it into the API-key field o
 outside abuse, not per-tenant identity — real multi-tenant auth is the server-side
 `verify token → tenant` from plan §9.6.
 
+## LLM configuration
+
+Fully env-driven (`configureLlm()` in `core/src/config.js`, wired per backend in
+`src/llm.ts`): `LLM_PROVIDER` (`cloudflare` | `openrouter` | `custom`), `LLM_MODEL`, and
+optional `LLM_BASE_URL` (required for `custom`) are plain wrangler `vars`; only
+`LLM_API_KEY` is a secret (`.dev.vars` locally, `wrangler secret put` deployed). Default:
+OpenRouter + `deepseek/deepseek-v4-flash`. Keep the vars/secret split — the key is the only
+secret value.
+
+## Data browser
+
+The frontend **Data** tab navigates all Cloudflare-stored data as a generic
+collection → record → detail tree, backed by the read-only `/admin/collections` routes on
+both backends (behind the API-key guard; host-agnostic logic in `core/src/admin.js`, tests
+in `scripts/admin.test.mjs`, `pnpm test`).
+
+Non-obvious constraint: Cloudflare cannot list Durable Object instances, so conversations
+are enumerable only via the `session:<id>` KV records each backend writes at
+provision/ingest (`putSessionIndex`) — sessions created before that index existed don't
+appear. Conversation *content* is streamed by the frontend via the Flue conversation
+client, not an admin endpoint.
+
+## GitHub channel (backend B)
+
+`backend-b/src/channels/github.ts` (`@flue/github`) connects IntranetFactory/hoth-poc to
+the `hoth` agent: `issues.opened` and `issue_comment.created` dispatch one conversation per
+issue; replies are posted via the `comment_on_github_issue` tool and carry a
+`<!-- hoth-agent-reply -->` marker the webhook skips (loop guard). The agent instructions
+must insist on the tool — otherwise the model answers in plain conversation text and
+nothing appears on GitHub.
+
+- Webhook endpoint: `https://hoth-poc-backend-b.ma532.workers.dev/channels/github/webhook`,
+  mounted in `app.ts` **before** the API-key guard (auth is `X-Hub-Signature-256`, not the
+  bearer). The explicit early mount is load-bearing.
+- GitHub conversations load the same trip-planner skill from the no-TTL KV entry
+  `bundle:github-default`, uploaded manually:
+  `wrangler kv key put bundle:github-default --path frontend/src/generated/hoth-bundle.json`
+  — re-upload after regenerating the bundle. The agent initializer mints the egress bearer
+  itself (tenantTag `github`) since these conversations never pass the ingest route.
+- Worker secrets: `GITHUB_WEBHOOK_SECRET` (channel creation throws at module init if
+  empty — deploy fails until it exists) and `GITHUB_TOKEN` (fine-grained PAT, Issues
+  read/write).
+- Status 2026-07-19: the repo webhook itself was **not yet created** (the PAT lacked the
+  Webhooks permission, 403); the end-to-end flow was verified with manually signed
+  deliveries (issue #1 answered, incl. follow-up).
+
+## Observability (Braintrust)
+
+Both backends export traces to the Braintrust project **`hoth-poc`** via the Flue tooling
+blueprint (`flue add tooling braintrust` — it prints an agent-directed blueprint, it does not
+edit files). Per backend: `braintrust@3.17.0` (pinned) + `src/braintrust.ts` (the
+`observe(...)` bridge, imported first in `app.ts`).
+
+- **Key**: `BRAINTRUST_API_KEY` is a Worker secret (`wrangler secret put`) and in gitignored
+  `.dev.vars` — never a wrangler `vars` value. Without the key the bridge is a no-op:
+  nothing initializes, the app runs untraced.
+- **Project name**: `BRAINTRUST_PROJECT_NAME=hoth-poc` in each `wrangler.jsonc` `vars`.
+- **Compat bridge (do not simplify away)**: braintrust 3.17 reads the pre-v2 flat event
+  fields (`model`, `input`, `output`, `usage`, `stopReason`, and `tool_call`), while current
+  Flue nightlies nest turn payloads under `request`/`response` and put an agent prompt's
+  output in the `agentOutput` observation detail. `compatibleEvent()` in `src/braintrust.ts`
+  flattens them back; without it llm spans arrive with duration only — no tokens, cost, or
+  content. Re-check on every `braintrust` or `@flue/runtime` bump.
+- **Delivery is best-effort on Cloudflare**: the observer can't `waitUntil`, so final spans
+  of a run can be lost when the isolate idles immediately after. Occasional missing span
+  ends are the documented tradeoff, not a bug.
+- **pnpm**: the `braintrust` postinstall only downloads the optional `bt` CLI; it's blocked
+  via `allowBuilds: braintrust: false` in `pnpm-workspace.yaml` (an unset placeholder there
+  makes every `pnpm install` exit 1).
+- **Data export**: traces carry prompts, model output/reasoning, tool args/results. Fine for
+  this POC; revisit (Braintrust `setMaskingFunction`) before pointing real tenant data at it.
+
+Verify: send a chat turn, then check the project logs — llm spans should be named
+`llm:<model>` and carry `prompt_tokens` / `completion_tokens` / `estimated_cost` metrics.
+
 ## Acceptance
 
 ```bash

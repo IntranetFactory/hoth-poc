@@ -17,6 +17,7 @@
     "@hoth/core": "workspace:*",
     "@octokit/rest": "^22.0.1",
     "agents": "^0.14.2",
+    "braintrust": "3.17.0",
     "hono": "^4.8.3",
     "valibot": "^1.1.0"
   },

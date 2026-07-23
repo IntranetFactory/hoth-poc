@@ -6,6 +6,9 @@ packages:
 allowBuilds:
   '@google/genai': false
   '@mongodb-js/zstd': false
+  # postinstall only downloads the optional `bt` CLI binary; the SDK we bundle
+  # into the workers doesn't need it.
+  braintrust: false
   core-js-pure: false
   esbuild: true
   node-liblzma: false

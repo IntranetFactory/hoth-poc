@@ -13,6 +13,7 @@
  * which self-heals every cold container. A bundle is immutable per id: a
  * reused id is rejected (plan §6/§13 C5).
  */
+import './braintrust';
 import { getSandbox } from '@cloudflare/sandbox';
 import { createAgentRouter } from '@flue/runtime/routing';
 import { Hono } from 'hono';

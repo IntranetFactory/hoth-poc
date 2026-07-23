@@ -7,6 +7,7 @@
  * bearer mapping KV[containerId] = STATIC_BEARER before the first prompt
  * (the frontend awaits the 2xx before chatting).
  */
+import './braintrust';
 import { getSandbox } from '@cloudflare/sandbox';
 import { createAgentRouter } from '@flue/runtime/routing';
 import { Hono } from 'hono';

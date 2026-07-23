@@ -39,6 +39,10 @@
     // requires LLM_BASE_URL). The API key is the LLM_API_KEY secret
     // (.dev.vars locally, wrangler secret put when deployed).
     "LLM_PROVIDER": "openrouter",
-    "LLM_MODEL": "deepseek/deepseek-v4-flash"
+    "LLM_MODEL": "deepseek/deepseek-v4-flash",
+    // Braintrust tracing (src/braintrust.ts): traces land in this project.
+    // The API key is the BRAINTRUST_API_KEY secret (.dev.vars locally,
+    // wrangler secret put when deployed) — never a vars value. No key = no export.
+    "BRAINTRUST_PROJECT_NAME": "hoth-poc"
   }
 }
