@@ -5,8 +5,8 @@
  * Ingress: the channel verifies X-Hub-Signature-256 against
  * GITHUB_WEBHOOK_SECRET over the raw delivery bytes before the handler runs,
  * so its /webhook route is mounted OUTSIDE the API-key guard in app.ts.
- * `issues.opened` and `issue_comment.created` dispatch to the `hoth` agent
- * keyed by the canonical conversation key (one conversation per issue), so
+ * `issues.opened` and `issue_comment.created` dispatch to the Hoth agent
+ * keyed by the canonical instance id (one conversation per issue), so
  * follow-up comments continue the same session.
  *
  * Egress: the agent posts replies through the comment_on_github_issue tool
@@ -20,6 +20,7 @@ import { defineTool, dispatch } from '@flue/runtime';
 import { putSessionIndex, readSession } from '@hoth/core';
 import { Octokit } from '@octokit/rest';
 import * as v from 'valibot';
+import { Hoth } from '../agents/hoth';
 
 const secrets = env as Record<string, string | undefined>;
 
@@ -62,9 +63,23 @@ export const channel = createGitHubChannel({
   },
 });
 
-async function dispatchToHoth(ref: GitHubIssueRef, input: unknown): Promise<void> {
-  const id = channel.conversationKey(ref);
-  await dispatch({ agent: 'hoth', id, input });
+async function dispatchToHoth(
+  ref: GitHubIssueRef,
+  input: { type: string; deliveryId: string } & Record<string, unknown>,
+): Promise<void> {
+  const id = channel.instanceId(ref);
+  // v2 dispatch takes the agent function and a structured signal message. The
+  // body carries the same JSON event the beta passed as raw input, so the
+  // agent instructions ("each input is a JSON event") keep working unchanged.
+  await dispatch(Hoth, {
+    id,
+    message: {
+      kind: 'signal',
+      type: input.type,
+      body: JSON.stringify(input),
+      attributes: { deliveryId: input.deliveryId },
+    },
+  });
   await indexConversation(id, ref).catch(() => {});
 }
 
@@ -92,7 +107,7 @@ async function indexConversation(id: string, ref: GitHubIssueRef): Promise<void>
 /** The GitHub issue bound to this agent instance, or null for non-GitHub sessions. */
 export function gitHubRefFromConversation(id: string): GitHubIssueRef | null {
   try {
-    return channel.parseConversationKey(id);
+    return channel.parseInstanceId(id);
   } catch {
     return null;
   }
@@ -103,7 +118,7 @@ export function commentOnIssue(ref: GitHubIssueRef) {
     name: 'comment_on_github_issue',
     description: `Post a Markdown comment as your answer on GitHub issue #${ref.issueNumber} in ${ref.owner}/${ref.repo}.`,
     input: v.object({ body: v.pipe(v.string(), v.minLength(1)) }),
-    async run({ input: { body } }) {
+    async run({ data: { body } }) {
       const client = new Octokit({ auth: secrets.GITHUB_TOKEN });
       const result = await client.rest.issues.createComment({
         owner: ref.owner,

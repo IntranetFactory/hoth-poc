@@ -14,4 +14,3 @@ allowBuilds:
   workerd: true
 patchedDependencies:
   '@durable-streams/client@0.2.6': patches/@durable-streams__client@0.2.6.patch
-  '@flue/cli@1.0.0-beta.9': patches/@flue__cli@1.0.0-beta.9.patch

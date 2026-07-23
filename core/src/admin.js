@@ -85,11 +85,11 @@ export async function readKvEntry(kv, key) {
 // Session index — the enumeration seam for agent conversations.
 //
 // Durable Object instances (the per-conversation FlueHothAgent DOs holding the
-// SQLite chat/event/run tables) cannot be listed by the platform, and Flue's
-// registry only indexes *workflow* runs — not chat conversations. So to let the
-// browser enumerate sessions without knowing ids upfront, each backend records
-// one `session:<id>` KV entry when it provisions a session. This is the only
-// durable record that maps a browsable id back to a conversation.
+// SQLite conversation stream) cannot be listed by the platform, and Flue has
+// no cross-conversation index. So to let the browser enumerate sessions
+// without knowing ids upfront, each backend records one `session:<id>` KV
+// entry when it provisions a session. This is the only durable record that
+// maps a browsable id back to a conversation.
 // ---------------------------------------------------------------------------
 
 /**
@@ -176,15 +176,14 @@ export async function readSession(kv, id) {
 
 // ---------------------------------------------------------------------------
 // Generic collection model — powers the frontend's entities -> records ->
-// record tree. Every backing store (KV, the session index, the Flue run
-// registry) is presented as a "collection" of "records" so the browser is
-// generic. Flue/Cloudflare specifics are injected via `deps` so this file stays
-// host-agnostic (deps.listRuns/getRun come from '@flue/runtime' in the worker).
+// record tree. Every backing store (KV, the session index) is presented as a
+// "collection" of "records" so the browser is generic. Cloudflare specifics
+// are injected via `deps` so this file stays host-agnostic. (Flue v2 removed
+// the beta workflow-run registry, so the former `runs` collection is gone —
+// chat conversations were never in it; they live under Agent sessions.)
 //
 // @typedef {Object} AdminDeps
 // @property {KvLike} kv
-// @property {(() => Promise<{ runs: Array<Record<string, unknown>>, nextCursor?: string }>)} [listRuns]
-// @property {((id: string) => Promise<Record<string, unknown> | null>)} [getRun]
 // ---------------------------------------------------------------------------
 
 /** The collections a backend exposes, given its KV namespace name. */
@@ -192,7 +191,6 @@ export function adminCollections(kvName) {
   return [
     { id: 'kv', label: `KV · ${kvName}`, kind: 'kv', description: 'Raw key/value entries (bundles, bearers, tags, session index).' },
     { id: 'sessions', label: 'Agent sessions', kind: 'sessions', description: 'One record per conversation id (from the session index).' },
-    { id: 'runs', label: 'Workflow runs', kind: 'runs', description: 'Flue registry run index (workflow/dispatch runs).' },
   ];
 }
 
@@ -221,24 +219,6 @@ export async function listCollectionRecords(collectionId, deps) {
       note: sessions.length === 0 ? 'No sessions indexed yet — start one in the Chat tab.' : undefined,
     };
   }
-  if (collectionId === 'runs') {
-    if (!deps.listRuns) return { records: [], note: 'run registry not available on this backend' };
-    try {
-      const res = await deps.listRuns();
-      const runs = res?.runs ?? [];
-      return {
-        records: runs.map((r) => ({
-          id: String(r.runId),
-          label: `${r.workflowName ?? 'run'} · ${r.status ?? '?'}`,
-          group: r.workflowName ? String(r.workflowName) : undefined,
-          meta: r,
-        })),
-        note: runs.length === 0 ? 'No workflow runs recorded (chat conversations are under Agent sessions).' : undefined,
-      };
-    } catch (err) {
-      return { records: [], note: `run registry read failed: ${err instanceof Error ? err.message : String(err)}` };
-    }
-  }
   return null; // unknown collection
 }
 
@@ -254,11 +234,6 @@ export async function readCollectionRecord(collectionId, recordId, deps) {
   if (collectionId === 'sessions') {
     const session = await readSession(deps.kv, recordId);
     return session ? { kind: 'session', id: recordId, session } : null;
-  }
-  if (collectionId === 'runs') {
-    if (!deps.getRun) return null;
-    const run = await deps.getRun(recordId);
-    return run ? { kind: 'run', id: recordId, run } : null;
   }
   return null;
 }

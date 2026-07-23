@@ -1,12 +1,15 @@
 // Unit-level proof the patch works: call the durable-streams stream() with
 // live:'sse' and assert the FIRST request URL carries live=sse (held SSE),
 // instead of a param-less JSON catch-up read.
+import { realpathSync } from 'fs';
 import { createRequire } from 'module';
 import path from 'path';
 
 // Resolve the exact @durable-streams/client that @flue/sdk (and the frontend
-// build) uses, so we test the patched copy.
-const require = createRequire(path.resolve('node_modules/.pnpm/@flue+sdk@1.0.0-beta.9/node_modules/@flue/sdk/dist/index.mjs'));
+// build) uses, so we test the patched copy. Going through the frontend's
+// symlink (realpath'd into .pnpm) keeps this working across @flue/sdk bumps.
+const sdkEntry = realpathSync(path.resolve('frontend/node_modules/@flue/sdk/dist/index.mjs'));
+const require = createRequire(sdkEntry);
 const dsPath = require.resolve('@durable-streams/client');
 console.log('durable-streams:', dsPath);
 const { stream } = await import('file://' + dsPath.replace(/\\/g, '/'));

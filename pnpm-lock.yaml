@@ -6,7 +6,6 @@ settings:
 
 patchedDependencies:
   '@durable-streams/client@0.2.6': a6e7c6b4939e7c46f3f21df639b087be6c415c4c88afd53e56f8f6f426c86787
-  '@flue/cli@1.0.0-beta.9': 7ed954b6aa14db3cf0b561fa8397e4a7b267185adf8abe7c1b5c3500b0d4b0fc
 
 importers:
 
@@ -17,15 +16,18 @@ importers:
       '@cloudflare/sandbox':
         specifier: 0.12.3
         version: 0.12.3
+      '@earendil-works/pi-ai':
+        specifier: ^0.81.1
+        version: 0.81.1(@modelcontextprotocol/sdk@1.29.0(@cfworker/json-schema@4.1.1)(zod@4.4.3))(ws@8.21.1)(zod@4.4.3)
       '@flue/runtime':
-        specifier: 1.0.0-beta.9
-        version: 1.0.0-beta.9(@cfworker/json-schema@4.1.1)(@standard-schema/spec@1.1.0)(@types/json-schema@7.0.15)(typebox@1.1.38)(typescript@5.9.3)(ws@8.21.1)(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3)
+        specifier: 2.0.0-nightly.202607230552
+        version: 2.0.0-nightly.202607230552(typescript@5.9.3)(ws@8.21.1)(zod@4.4.3)
       '@hoth/core':
         specifier: workspace:*
         version: link:../core
       agents:
         specifier: ^0.14.2
-        version: 0.14.5(@babel/core@7.29.7)(@babel/runtime@7.29.7)(ai@7.0.31(zod@4.4.3))(react@19.2.7)(rolldown@1.1.5)(vite@8.1.4(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))(zod@4.4.3)
+        version: 0.14.5(@babel/core@7.29.7)(@babel/runtime@7.29.7)(ai@7.0.31(zod@4.4.3))(react@19.2.7)(rolldown@1.1.5)(vite@8.1.5(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))(zod@4.4.3)
       hono:
         specifier: ^4.8.3
         version: 4.12.30
@@ -34,26 +36,32 @@ importers:
         version: 1.4.2(typescript@5.9.3)
     devDependencies:
       '@cloudflare/vite-plugin':
-        specifier: ^1.45.0
-        version: 1.45.0(vite@8.1.4(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))(wrangler@4.111.0)
-      '@flue/cli':
-        specifier: 1.0.0-beta.9
-        version: 1.0.0-beta.9(patch_hash=7ed954b6aa14db3cf0b561fa8397e4a7b267185adf8abe7c1b5c3500b0d4b0fc)(@cfworker/json-schema@4.1.1)(@standard-schema/spec@1.1.0)(@types/json-schema@7.0.15)(@types/node@26.1.1)(esbuild@0.28.1)(hono@4.12.30)(jiti@2.7.0)(typebox@1.1.38)(typescript@5.9.3)(wrangler@4.111.0)(ws@8.21.1)(yaml@2.9.0)(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3)
+        specifier: ^1.46.0
+        version: 1.46.0(vite@8.1.5(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))(wrangler@4.113.0)
+      '@flue/vite':
+        specifier: 2.0.0-nightly.202607230552
+        version: 2.0.0-nightly.202607230552(hono@4.12.30)(typescript@5.9.3)(vite@8.1.5(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))(ws@8.21.1)(zod@4.4.3)
+      vite:
+        specifier: ^8.1.5
+        version: 8.1.5(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0)
       wrangler:
-        specifier: ^4.78.0
-        version: 4.111.0
+        specifier: ^4.113.0
+        version: 4.113.0
 
   backend-b:
     dependencies:
       '@cloudflare/sandbox':
         specifier: 0.12.3
         version: 0.12.3
+      '@earendil-works/pi-ai':
+        specifier: ^0.81.1
+        version: 0.81.1(@modelcontextprotocol/sdk@1.29.0(@cfworker/json-schema@4.1.1)(zod@4.4.3))(ws@8.21.1)(zod@4.4.3)
       '@flue/github':
-        specifier: 1.0.0-beta.1
-        version: 1.0.0-beta.1
+        specifier: 2.0.0-nightly.202607230552
+        version: 2.0.0-nightly.202607230552(@flue/runtime@2.0.0-nightly.202607230552(typescript@5.9.3)(ws@8.21.1)(zod@4.4.3))
       '@flue/runtime':
-        specifier: 1.0.0-beta.9
-        version: 1.0.0-beta.9(@cfworker/json-schema@4.1.1)(@standard-schema/spec@1.1.0)(@types/json-schema@7.0.15)(typebox@1.1.38)(typescript@5.9.3)(ws@8.21.1)(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3)
+        specifier: 2.0.0-nightly.202607230552
+        version: 2.0.0-nightly.202607230552(typescript@5.9.3)(ws@8.21.1)(zod@4.4.3)
       '@hoth/core':
         specifier: workspace:*
         version: link:../core
@@ -62,7 +70,7 @@ importers:
         version: 22.0.1
       agents:
         specifier: ^0.14.2
-        version: 0.14.5(@babel/core@7.29.7)(@babel/runtime@7.29.7)(ai@7.0.31(zod@4.4.3))(react@19.2.7)(rolldown@1.1.5)(vite@8.1.4(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))(zod@4.4.3)
+        version: 0.14.5(@babel/core@7.29.7)(@babel/runtime@7.29.7)(ai@7.0.31(zod@4.4.3))(react@19.2.7)(rolldown@1.1.5)(vite@8.1.5(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))(zod@4.4.3)
       hono:
         specifier: ^4.8.3
         version: 4.12.30
@@ -71,25 +79,28 @@ importers:
         version: 1.4.2(typescript@5.9.3)
     devDependencies:
       '@cloudflare/vite-plugin':
-        specifier: ^1.45.0
-        version: 1.45.0(vite@8.1.4(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))(wrangler@4.111.0)
-      '@flue/cli':
-        specifier: 1.0.0-beta.9
-        version: 1.0.0-beta.9(patch_hash=7ed954b6aa14db3cf0b561fa8397e4a7b267185adf8abe7c1b5c3500b0d4b0fc)(@cfworker/json-schema@4.1.1)(@standard-schema/spec@1.1.0)(@types/json-schema@7.0.15)(@types/node@26.1.1)(esbuild@0.28.1)(hono@4.12.30)(jiti@2.7.0)(typebox@1.1.38)(typescript@5.9.3)(wrangler@4.111.0)(ws@8.21.1)(yaml@2.9.0)(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3)
+        specifier: ^1.46.0
+        version: 1.46.0(vite@8.1.5(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))(wrangler@4.113.0)
+      '@flue/vite':
+        specifier: 2.0.0-nightly.202607230552
+        version: 2.0.0-nightly.202607230552(hono@4.12.30)(typescript@5.9.3)(vite@8.1.5(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))(ws@8.21.1)(zod@4.4.3)
+      vite:
+        specifier: ^8.1.5
+        version: 8.1.5(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0)
       wrangler:
-        specifier: ^4.78.0
-        version: 4.111.0
+        specifier: ^4.113.0
+        version: 4.113.0
 
   core: {}
 
   frontend:
     dependencies:
       '@flue/react':
-        specifier: 1.0.0-beta.9
-        version: 1.0.0-beta.9(@flue/sdk@1.0.0-beta.9)(react@18.3.1)
+        specifier: 2.0.0-nightly.202607230552
+        version: 2.0.0-nightly.202607230552(@flue/sdk@2.0.0-nightly.202607230552)(react@18.3.1)
       '@flue/sdk':
-        specifier: 1.0.0-beta.9
-        version: 1.0.0-beta.9
+        specifier: 2.0.0-nightly.202607230552
+        version: 2.0.0-nightly.202607230552
       '@fontsource-variable/geist':
         specifier: ^5.3.0
         version: 5.3.0
@@ -532,15 +543,21 @@ packages:
       workerd:
         optional: true
 
-  '@cloudflare/vite-plugin@1.45.0':
-    resolution: {integrity: sha512-TXK2HuhKF7Q/hMBj3Eih6241pEgQzbrVoNLIpT2lRJHipHaCGoQjN8Q7O8fjWSUEnJkkFn8lQt1QyzJ21DoRlQ==}
+  '@cloudflare/vite-plugin@1.46.0':
+    resolution: {integrity: sha512-+pnxcFWo+kMozeCah9CxYI6VywMQmBBfEiGJZgYkIji+vnNWkWEC0WkL5MQWHCBIiEPIbcoZDQiKr6yruLFI2Q==}
     hasBin: true
     peerDependencies:
       vite: ^6.1.0 || ^7.0.0 || ^8.0.0
-      wrangler: ^4.111.0
+      wrangler: ^4.113.0
 
   '@cloudflare/workerd-darwin-64@1.20260710.1':
     resolution: {integrity: sha512-OqJl2eWF5+y9jarMm3YqqCTUe7Hd4ihogX5jyRU8iaAgOVyDr/Bk6aXpPCVUi1/MHzO93a18R/TmSTtzmB0sQw==}
+    engines: {node: '>=16'}
+    cpu: [x64]
+    os: [darwin]
+
+  '@cloudflare/workerd-darwin-64@1.20260721.1':
+    resolution: {integrity: sha512-VivNMhiEdZIB4JBWxf1RMJGROErv53qmQ+dvhjA1evrCouvqRYW718VqDideU3PSV7Ythl5Df48NqZYWoaEHpQ==}
     engines: {node: '>=16'}
     cpu: [x64]
     os: [darwin]
@@ -551,8 +568,20 @@ packages:
     cpu: [arm64]
     os: [darwin]
 
+  '@cloudflare/workerd-darwin-arm64@1.20260721.1':
+    resolution: {integrity: sha512-k7oye1ZiuwnnBBA2eTMduconr/ud5ZxFtRNTsYwMdmJeeeislw2+M72otrHxxvybCP7JWPPlJ38uhfajpcyhOA==}
+    engines: {node: '>=16'}
+    cpu: [arm64]
+    os: [darwin]
+
   '@cloudflare/workerd-linux-64@1.20260710.1':
     resolution: {integrity: sha512-lVWUgqI8qrkqvaCBGElu1kdaUFdAvaS2RD8K4qkCFP9hI3f5TCXumEs5qWSeZkvKum0+X/uJZ5hBFWsYI5SmoQ==}
+    engines: {node: '>=16'}
+    cpu: [x64]
+    os: [linux]
+
+  '@cloudflare/workerd-linux-64@1.20260721.1':
+    resolution: {integrity: sha512-hon0lW4ZQ4boAVgaw+0ZFTNS8v5MWPWvK0HZnt4tDpKYnDUviLZawtUW3KqvFmCQTipVHl1S34j3J8Eqb93hGQ==}
     engines: {node: '>=16'}
     cpu: [x64]
     os: [linux]
@@ -563,8 +592,20 @@ packages:
     cpu: [arm64]
     os: [linux]
 
+  '@cloudflare/workerd-linux-arm64@1.20260721.1':
+    resolution: {integrity: sha512-nAl+HRQqpX5b7xVwWcvLPZmCk8NQ2yjI0yvJTWcHiRswbMEg1ZZckVmjJUAn0PHzZARbCSyIV7v3UjM+SPRmIQ==}
+    engines: {node: '>=16'}
+    cpu: [arm64]
+    os: [linux]
+
   '@cloudflare/workerd-windows-64@1.20260710.1':
     resolution: {integrity: sha512-GcLHy1oN1dfK6g1Z7UDV9f5xMGyTfPwcjWQ0sfWKH31IsoEVCRapnj3IC0PoIrDbnoo6irGPP0CwVs3WzdTajw==}
+    engines: {node: '>=16'}
+    cpu: [x64]
+    os: [win32]
+
+  '@cloudflare/workerd-windows-64@1.20260721.1':
+    resolution: {integrity: sha512-9paFG5cMTKz/CRixnEEnZbe5uvFPBFSDthxJHANfCWhUtBj49GSL1FPIokIg+Q+H8DGJEExU0lL92LtxD0lTxQ==}
     engines: {node: '>=16'}
     cpu: [x64]
     os: [win32]
@@ -585,12 +626,12 @@ packages:
     engines: {node: '>=18.0.0'}
     hasBin: true
 
-  '@earendil-works/pi-agent-core@0.80.7':
-    resolution: {integrity: sha512-EFjyAuoz2kn24sR9Q5A86sZCG6mD+nz58DCsA2I2wxgmS50cF1tSLCBOZaHKI5U9Y3pJs4BefeK3LRkB5TdJag==}
+  '@earendil-works/pi-agent-core@0.81.1':
+    resolution: {integrity: sha512-yqbh68CyhqxMov/jUogFJfMqlu2Gd37GAki+tr59YCmAPHfomiCA5ESzusXtpGzABeiZFC/OrRdQ4GwCCOMIHA==}
     engines: {node: '>=22.19.0'}
 
-  '@earendil-works/pi-ai@0.80.7':
-    resolution: {integrity: sha512-8RLKLwe5TFM9kKFMNu/lTzveduq4GxZbnlG6ba8FAhLeb5wJP4zbj1eBumKBRvggpFQnW5R/Vo2a8zTlHsV9SQ==}
+  '@earendil-works/pi-ai@0.81.1':
+    resolution: {integrity: sha512-hzHE7Z8l5mgJk+ke67Lge0rwS2+wbKJrFKl9o5M1R1rh33+cCT7D1AHz1OAtX5wFs90E1/BTGhyJRTUHaMxGvQ==}
     engines: {node: '>=22.19.0'}
     hasBin: true
 
@@ -933,27 +974,30 @@ packages:
   '@floating-ui/utils@0.2.12':
     resolution: {integrity: sha512-HpCo8tmWzLVad5s2d19EhAz5zqrrQ6s69qd6moPMQvkOuSwDT1YgRfWSVuc4ennqrgv3OHppiOGMQ7oC13yIww==}
 
-  '@flue/cli@1.0.0-beta.9':
-    resolution: {integrity: sha512-RPv28ecD7lQ2XBZbuohte3rXDqHHrdXTpCGC5mSxYQsEkOeDN2LOmImQZbJqCrkIAFmMgntzOhaF2+14R61C4Q==}
+  '@flue/github@2.0.0-nightly.202607230552':
+    resolution: {integrity: sha512-HeyH+t70L7vQJbMiUezGUqP91nFQmdr8RaQpM7E2sTKFs1/8xOJIzpxfRJDBSTfSbHdbJOVuCThQ8dcFkFNkKw==}
     engines: {node: '>=22.19.0'}
-    hasBin: true
-
-  '@flue/github@1.0.0-beta.1':
-    resolution: {integrity: sha512-LEB4OfD8bUPQx5JrCOZFilchZsyGETlPKu5SNhUUafqTsymhs4lnAohtdRibsWklOZTNpUkw3867VOzUE2JnMA==}
-    engines: {node: '>=22.19.0'}
-
-  '@flue/react@1.0.0-beta.9':
-    resolution: {integrity: sha512-mr8vNtr1kwUpgsq1fISfz1TmPhVOpp/jrQdx0FYSRoeURq+cMVcWo/k5gI86xTS2BjtCN70edYrmxjjRWBUA6A==}
     peerDependencies:
-      '@flue/sdk': '>=1.0.0-beta.3 <1.0.0'
+      '@flue/runtime': ^2.0.0-nightly.202607230552
+
+  '@flue/react@2.0.0-nightly.202607230552':
+    resolution: {integrity: sha512-ej2dKTUlZzyYdWB9RwBgJDLyT/9bYD9zy2Zlga6QidlbF5kdPU2NHDcm4krB5slyxS7oHvheYU4s//VTCNrBuA==}
+    peerDependencies:
+      '@flue/sdk': 2.0.0-nightly.202607230552
       react: '>=18'
 
-  '@flue/runtime@1.0.0-beta.9':
-    resolution: {integrity: sha512-ksh0ZkTVyqQnGvU3OnbVX6luAJwe6tt8q7O0vn99b7Cx6XcPTXzY/YEkXrOtCHzV6ZwfSdO9ZfaWbhTD1tdQuQ==}
+  '@flue/runtime@2.0.0-nightly.202607230552':
+    resolution: {integrity: sha512-kazAgpwoGkmhNqsut7I4GVG9O+J0er/R66Fwi9cngRMYCHO4yC23qgWs+pdPvjR72ASG3yAwu57LMff/F0MAog==}
     engines: {node: '>=22.19.0'}
 
-  '@flue/sdk@1.0.0-beta.9':
-    resolution: {integrity: sha512-EkGWF1Yw6baM4ekmp+3xFkc+LmDKcIAA0KQSZSpaSqQRYyixXB+IwEbhePS83HCgrR0/jup9l8rgld4Q2IGNOw==}
+  '@flue/sdk@2.0.0-nightly.202607230552':
+    resolution: {integrity: sha512-HMEbG7var5niwzO/OYbcnej5ZfUgCfhxH4bwN2GEokCcDP1Klm2nSnE3nH606LHE0VuKK3gtgEPC6yPQEYJcaw==}
+
+  '@flue/vite@2.0.0-nightly.202607230552':
+    resolution: {integrity: sha512-MmmPRkvUHJGX0AoS8oo+mjw2MdnyqapNk1ln/v4H3dEMocWfOTiksElLnG/4ghLNE4buXQGknYk00mJOu+pY5w==}
+    engines: {node: '>=22.19.0'}
+    peerDependencies:
+      vite: ^8.0.0
 
   '@fontsource-variable/geist@5.3.0':
     resolution: {integrity: sha512-j0m+vLQuG5XAYoHtGCVu0spvlGreR3EzpECUVzkFmI1mTVnAO38l/NEPDCFgZ177JxzYJCLSmTQibIiYPilGrA==}
@@ -978,12 +1022,6 @@ packages:
     engines: {node: '>=20'}
     peerDependencies:
       hono: ^4
-
-  '@hono/standard-validator@0.2.3':
-    resolution: {integrity: sha512-bp9vHu6Va6SfMHC3D4ZLBbT/woi+AZ9CRdTXQu3kLJuLh2W/Gb9UO4hijS+BQAGFXi4EGpXdetxpzwTAawSVeg==}
-    peerDependencies:
-      '@standard-schema/spec': ^1.0.0
-      hono: '>=3.9.0'
 
   '@iconify/types@2.0.0':
     resolution: {integrity: sha512-+wluvCrRhXrhyOmRDJ3q8mux9JkKy5SJ/v8ol2tu4FVjyYvtEzkc/3pK15ET6RKg4b4w4BmTk1+gsCUhf21Ykg==}
@@ -2381,67 +2419,6 @@ packages:
   '@speed-highlight/core@1.2.17':
     resolution: {integrity: sha512-Z92FwKpCtfaW1V0jTU/fh3QzYEZN8wDwrzRIBoADCJfn4mJCNcJN/XegifX7BDrQ8/h9Xh/JnbyMchL0FqXrkg==}
 
-  '@standard-community/standard-json@0.3.5':
-    resolution: {integrity: sha512-4+ZPorwDRt47i+O7RjyuaxHRK/37QY/LmgxlGrRrSTLYoFatEOzvqIc85GTlM18SFZ5E91C+v0o/M37wZPpUHA==}
-    peerDependencies:
-      '@standard-schema/spec': ^1.0.0
-      '@types/json-schema': ^7.0.15
-      '@valibot/to-json-schema': ^1.3.0
-      arktype: ^2.1.20
-      effect: ^3.16.8
-      quansync: ^0.2.11
-      sury: ^10.0.0
-      typebox: ^1.0.17
-      valibot: ^1.1.0
-      zod: ^3.25.0 || ^4.0.0
-      zod-to-json-schema: ^3.24.5
-    peerDependenciesMeta:
-      '@valibot/to-json-schema':
-        optional: true
-      arktype:
-        optional: true
-      effect:
-        optional: true
-      sury:
-        optional: true
-      typebox:
-        optional: true
-      valibot:
-        optional: true
-      zod:
-        optional: true
-      zod-to-json-schema:
-        optional: true
-
-  '@standard-community/standard-openapi@0.2.9':
-    resolution: {integrity: sha512-htj+yldvN1XncyZi4rehbf9kLbu8os2Ke/rfqoZHCMHuw34kiF3LP/yQPdA0tQ940y8nDq3Iou8R3wG+AGGyvg==}
-    peerDependencies:
-      '@standard-community/standard-json': ^0.3.5
-      '@standard-schema/spec': ^1.0.0
-      arktype: ^2.1.20
-      effect: ^3.17.14
-      openapi-types: ^12.1.3
-      sury: ^10.0.0
-      typebox: ^1.0.0
-      valibot: ^1.1.0
-      zod: ^3.25.0 || ^4.0.0
-      zod-openapi: ^4
-    peerDependenciesMeta:
-      arktype:
-        optional: true
-      effect:
-        optional: true
-      sury:
-        optional: true
-      typebox:
-        optional: true
-      valibot:
-        optional: true
-      zod:
-        optional: true
-      zod-openapi:
-        optional: true
-
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
 
@@ -2743,10 +2720,6 @@ packages:
     resolution: {integrity: sha512-3qkmU6KXWh8GIThEAW3kuRHPQBMjWkKy+Ppz3WkUucx53DTpOa6siMn4xDGSOhlVyMrDaJTCTMLYPZVAIk1P0A==}
     peerDependencies:
       valibot: ^1.4.0
-
-  '@vercel/detect-agent@1.2.3':
-    resolution: {integrity: sha512-VYNCgUc0nOmC4WJmWw9GkrKdfr8Zl4/rxhC5SvgacBgxiW9W/9NRttUoHHXV8xdII3MaRgkZZVX8Ikzc/Jmjag==}
-    engines: {node: '>=14'}
 
   '@vercel/oidc@3.2.0':
     resolution: {integrity: sha512-UycprH3T6n3jH0k44NHMa7pnFHGu/N05MjojYr+Mc6I7obkoLIJujSWwin1pCvdy/eOxrI/l3uDLQsmcrOb4ug==}
@@ -3513,10 +3486,6 @@ packages:
     resolution: {integrity: sha512-S8KoZgRZN+a5rNwqTxlZZePjT/4cnm0ROV70LedRHZ0p8u9fRID0hJUZQpkKLzro8LfmC8sx23bY6tVNxv8pQA==}
     engines: {node: '>= 18.0.0'}
 
-  find-up-simple@1.0.1:
-    resolution: {integrity: sha512-afd4O7zpqHeRyg4PfDQsXmlDe2PfdHtJt6Akt8jOWaApLOZk5JXs6VMR29lz03pRe9mpykrRCYIYxaJYcfpncQ==}
-    engines: {node: '>=18'}
-
   find-up@3.0.0:
     resolution: {integrity: sha512-1yD6RmLI1XBfxugvORwlck6f75tYL+iR0jqwsOrOxMZyGYqUuDhJ0l4AXdO1iX/FTs9cBAMEk1gWSEx1kSbylg==}
     engines: {node: '>=6'}
@@ -3683,21 +3652,6 @@ packages:
 
   hastscript@9.0.1:
     resolution: {integrity: sha512-g7df9rMFX/SPi34tyGCyUBREQoKkapwdY/T04Qn9TDWfHhAYt4/I0gMVirzK5wEzeUqIjEB+LXC/ypb7Aqno5w==}
-
-  hono-openapi@1.3.1:
-    resolution: {integrity: sha512-NLVeVkhKZ3drmQNEIPac8HX8Y54uf1hJAgIM/7MfDsaeVVmB+QILWQxx5x3R3NvRHgedcbEbOCGY2uR7WQYyMw==}
-    peerDependencies:
-      '@hono/standard-validator': ^0.2.0
-      '@standard-community/standard-json': ^0.3.5
-      '@standard-community/standard-openapi': ^0.2.9
-      '@types/json-schema': ^7.0.15
-      hono: ^4.11.2
-      openapi-types: ^12.1.3
-    peerDependenciesMeta:
-      '@hono/standard-validator':
-        optional: true
-      hono:
-        optional: true
 
   hono@4.12.22:
     resolution: {integrity: sha512-7fvVPbB92zNRsQke+uiRGwtTuef0tB2Dg4hWxYfFNvkQhIltWoyi0ONReM5LWA+jJWS3nfT5lTq+qbsIpX0IQw==}
@@ -3907,6 +3861,10 @@ packages:
     resolution: {integrity: sha512-1td788aAnnZ5qs7V2QIRl1owjtYpbKt749Y3xauqQgwIIGF/xXWz1wMTEBx5O3LK3lXLVuqXPdPxj2BoFHaW9Q==}
     hasBin: true
 
+  js-yaml@5.2.1:
+    resolution: {integrity: sha512-zfLtNfQqxVqq3uaTqSkh4x4hZw3KHobGUA0fJUj4wawW8bsQLTVqpHdXSIzidh7o+4lEW36tANuAGdaFx6Zgnw==}
+    hasBin: true
+
   jsesc@3.1.0:
     resolution: {integrity: sha512-/sM3dO2FOzXjKQhJuo0Q173wf2KOo8t4I8vHy6lF9poUp7bKT0/NHE8fPX23PwfhnykfqnC2xRxOnVw5XuGIaA==}
     engines: {node: '>=6'}
@@ -4087,6 +4045,9 @@ packages:
 
   magic-string@0.30.21:
     resolution: {integrity: sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ==}
+
+  magic-string@1.0.0:
+    resolution: {integrity: sha512-CGvjzMN08iv6w1mm4/x3Gh1hLb4VnyRUA15FFpl6CsCIGGoe36k7kY5KNz9QDbSBN5I/fWHM6ZlIkUTa5xdUEA==}
 
   markdown-table@3.0.4:
     resolution: {integrity: sha512-wiYz4+JrLyb/DqW2hkFJxP7Vd7JuTDm77fvbM8VfEQdmSMqcImWeeRbHwZjBjIFki/VaMK2BhFi7oUUZeM5bqw==}
@@ -4349,15 +4310,17 @@ packages:
     engines: {node: '>=22.0.0'}
     hasBin: true
 
+  miniflare@4.20260721.0:
+    resolution: {integrity: sha512-fBLaCxZ2i/nPH8iyLzvza0C8/sSF4sjD1ma1Skf+pkZVK0TlaW5ujHJlUHwcwR66v2JZt+Q28d4DCX/oaLG0cA==}
+    engines: {node: '>=22.0.0'}
+    hasBin: true
+
   minimatch@10.2.5:
     resolution: {integrity: sha512-MULkVLfKGYDFYejP07QOurDLLQpcjk7Fw+7jXS2R2czRQzR56yHRveU5NDJEOviH+hETZKSkIk5c+T23GjFUMg==}
     engines: {node: 18 || 20 || >=22}
 
   minimist@1.2.8:
     resolution: {integrity: sha512-2yyAR8qBkN3YuheJanUpWC5U3bb5osDywNB8RzDVlDwDHbocAJveqqj1u8+SVD7jkWT4yvsHCpWqqWqAxb0zCA==}
-
-  minisearch@7.2.0:
-    resolution: {integrity: sha512-dqT2XBYUOZOiC5t2HRnwADjhNS2cecp9u+TJRiJ1Qp/f5qjkeT5APcGPjHw+bz89Ms8Jp+cG4AlE+QZ/QnDglg==}
 
   mkdirp-classic@0.5.3:
     resolution: {integrity: sha512-gKLcREMhtuZRwRAfqP3RFW+TK4JqApVBtOIftVgjuABpAtpxhPGaDcfvbhNvD0B8iD1oUr/txX35NjcaY6Ns/A==}
@@ -4502,9 +4465,6 @@ packages:
       zod:
         optional: true
 
-  openapi-types@12.1.3:
-    resolution: {integrity: sha512-N4YtSYJqghVu4iek2ZUvcN/0aqH1kRDuNqzcycDxhOUpg7GdvLa2F3DgS6yBNhInhv2r/6I0Flkn7CqL8+nIcw==}
-
   ora@8.2.0:
     resolution: {integrity: sha512-weP+BZ8MVNnlCm8c0Qdc1WSWq4Qn7I+9CJGm7Qali6g44e/PUzbjNqJX5NJ9ljlNMosfJvg1fKEGILklK9cwnw==}
     engines: {node: '>=18'}
@@ -4527,10 +4487,6 @@ packages:
 
   package-manager-detector@1.7.0:
     resolution: {integrity: sha512-xg1eHpwYL/D/HEdWw2goFZP6vV0FH7W+PZ5rFkGjdIDLtxq7EkzBUeT3m+lndYCt8wKbmofUu1MUdMCXkCk9ZQ==}
-
-  package-up@5.0.0:
-    resolution: {integrity: sha512-MQEgDUvXCa3sGvqHg3pzHO8e9gqTCMPVrWUko3vPQGntwegmFo52mZb2abIVTjFnUcW0BcPz0D93jV5Cas1DWA==}
-    engines: {node: '>=18'}
 
   papaparse@5.5.4:
     resolution: {integrity: sha512-SwzWD9gl/ElwYLCI0nUja1mFJzjq2D8ziShfNBa7zCHzkOozeOGDwHWQ+tvCzEZcewecWZ5U7kUopDnG+DFYEQ==}
@@ -4672,9 +4628,6 @@ packages:
   qs@6.15.3:
     resolution: {integrity: sha512-O9gl3zCl5h5blw1KGUzQKhA5oUXSl8rwUIM5o0S3nCXMliSvy5Dzx7/DJcI+SwgICv+IneSZwhBh1oSyEHA71A==}
     engines: {node: '>=0.6'}
-
-  quansync@0.2.11:
-    resolution: {integrity: sha512-AifT7QEbW9Nri4tAwR5M/uzpBuqfZf+zwaEM/QkzEjj7NBuFD2rBuy0K3dE+8wltbezDV7JMA0WfnCPYRSYbXA==}
 
   queue-microtask@1.2.3:
     resolution: {integrity: sha512-NuaNSa6flKT5JaSYQzJok04JzTL1CA6aGhv5rfLW3PgqA+M2ChpZQnAC8h8i4ZFkBS8X5RqkDBHA7r4hej3K9A==}
@@ -5311,8 +5264,8 @@ packages:
       yaml:
         optional: true
 
-  vite@8.1.4:
-    resolution: {integrity: sha512-bTT9PsdWO+MQMNG9ZXIP/qM9wGh37DFxTV/sPq9cFpHr3w4jkgef032PkAL9jAqhk3Nz8NQw3O8n6/xFkqO4QQ==}
+  vite@8.1.5:
+    resolution: {integrity: sha512-7ULLwsCdYx/nRyrpiEwvqb5TFHrMVZyBt+rg/OAXT7rgj/z+DtTDyKFeLAdDkubDVDKD8jOsndmy7m55XcfUsw==}
     engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
     peerDependencies:
@@ -5376,12 +5329,27 @@ packages:
     engines: {node: '>=16'}
     hasBin: true
 
+  workerd@1.20260721.1:
+    resolution: {integrity: sha512-b/DWhpV0jTudzQpLhDovcOgBz233386q+3Hbari7CLCNT9UXxjQziSTZ9yCoKdT2K3TSx5jrwlOisq8hlLWXYg==}
+    engines: {node: '>=16'}
+    hasBin: true
+
   wrangler@4.111.0:
     resolution: {integrity: sha512-bffpI9EyrnpKkF/1S+RaIv8oRD93GtbsA7TlfWwOsGJGB7VO3jVbdGzpC9TU7Bqom3z7jUxcte4Z9MPhaQ4HoQ==}
     engines: {node: '>=22.0.0'}
     hasBin: true
     peerDependencies:
       '@cloudflare/workers-types': ^5.20260710.1
+    peerDependenciesMeta:
+      '@cloudflare/workers-types':
+        optional: true
+
+  wrangler@4.113.0:
+    resolution: {integrity: sha512-ROGzSloJv0y21It6Oc9LaruNcu1tdiQ/XzL3Jc3YkFjzXEMXzTqVhA8vQaGMTdZHTjFP0PVcwAHNgaw3gXu4wA==}
+    engines: {node: '>=22.0.0'}
+    hasBin: true
+    peerDependencies:
+      '@cloudflare/workers-types': ^5.20260721.1
     peerDependenciesMeta:
       '@cloudflare/workers-types':
         optional: true
@@ -5544,7 +5512,7 @@ snapshots:
       '@aws-sdk/types': 3.974.1
       '@smithy/core': 3.29.4
       '@smithy/fetch-http-handler': 5.6.6
-      '@smithy/node-http-handler': 4.7.3
+      '@smithy/node-http-handler': 4.9.6
       '@smithy/types': 4.16.1
       tslib: 2.8.1
 
@@ -5969,14 +5937,20 @@ snapshots:
     optionalDependencies:
       workerd: 1.20260710.1
 
-  '@cloudflare/vite-plugin@1.45.0(vite@8.1.4(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))(wrangler@4.111.0)':
+  '@cloudflare/unenv-preset@2.16.1(unenv@2.0.0-rc.24)(workerd@1.20260721.1)':
     dependencies:
-      '@cloudflare/unenv-preset': 2.16.1(unenv@2.0.0-rc.24)(workerd@1.20260710.1)
-      miniflare: 4.20260710.0
       unenv: 2.0.0-rc.24
-      vite: 8.1.4(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0)
-      workerd: 1.20260710.1
-      wrangler: 4.111.0
+    optionalDependencies:
+      workerd: 1.20260721.1
+
+  '@cloudflare/vite-plugin@1.46.0(vite@8.1.5(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))(wrangler@4.113.0)':
+    dependencies:
+      '@cloudflare/unenv-preset': 2.16.1(unenv@2.0.0-rc.24)(workerd@1.20260721.1)
+      miniflare: 4.20260721.0
+      unenv: 2.0.0-rc.24
+      vite: 8.1.5(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0)
+      workerd: 1.20260721.1
+      wrangler: 4.113.0
       ws: 8.21.0
     transitivePeerDependencies:
       - bufferutil
@@ -5985,16 +5959,31 @@ snapshots:
   '@cloudflare/workerd-darwin-64@1.20260710.1':
     optional: true
 
+  '@cloudflare/workerd-darwin-64@1.20260721.1':
+    optional: true
+
   '@cloudflare/workerd-darwin-arm64@1.20260710.1':
+    optional: true
+
+  '@cloudflare/workerd-darwin-arm64@1.20260721.1':
     optional: true
 
   '@cloudflare/workerd-linux-64@1.20260710.1':
     optional: true
 
+  '@cloudflare/workerd-linux-64@1.20260721.1':
+    optional: true
+
   '@cloudflare/workerd-linux-arm64@1.20260710.1':
     optional: true
 
+  '@cloudflare/workerd-linux-arm64@1.20260721.1':
+    optional: true
+
   '@cloudflare/workerd-windows-64@1.20260710.1':
+    optional: true
+
+  '@cloudflare/workerd-windows-64@1.20260721.1':
     optional: true
 
   '@cspotcode/source-map-support@0.8.1':
@@ -6027,9 +6016,9 @@ snapshots:
       '@microsoft/fetch-event-source': 2.0.1
       fastq: 1.20.1
 
-  '@earendil-works/pi-agent-core@0.80.7(@modelcontextprotocol/sdk@1.29.0(@cfworker/json-schema@4.1.1)(zod@4.4.3))(ws@8.21.1)(zod@4.4.3)':
+  '@earendil-works/pi-agent-core@0.81.1(@modelcontextprotocol/sdk@1.29.0(@cfworker/json-schema@4.1.1)(zod@4.4.3))(ws@8.21.1)(zod@4.4.3)':
     dependencies:
-      '@earendil-works/pi-ai': 0.80.7(@modelcontextprotocol/sdk@1.29.0(@cfworker/json-schema@4.1.1)(zod@4.4.3))(ws@8.21.1)(zod@4.4.3)
+      '@earendil-works/pi-ai': 0.81.1(@modelcontextprotocol/sdk@1.29.0(@cfworker/json-schema@4.1.1)(zod@4.4.3))(ws@8.21.1)(zod@4.4.3)
       ignore: 7.0.5
       typebox: 1.1.38
       yaml: 2.9.0
@@ -6041,7 +6030,7 @@ snapshots:
       - ws
       - zod
 
-  '@earendil-works/pi-ai@0.80.7(@modelcontextprotocol/sdk@1.29.0(@cfworker/json-schema@4.1.1)(zod@4.4.3))(ws@8.21.1)(zod@4.4.3)':
+  '@earendil-works/pi-ai@0.81.1(@modelcontextprotocol/sdk@1.29.0(@cfworker/json-schema@4.1.1)(zod@4.4.3))(ws@8.21.1)(zod@4.4.3)':
     dependencies:
       '@anthropic-ai/sdk': 0.91.1(zod@4.4.3)
       '@aws-sdk/client-bedrock-runtime': 3.1048.0
@@ -6256,99 +6245,57 @@ snapshots:
 
   '@floating-ui/utils@0.2.12': {}
 
-  '@flue/cli@1.0.0-beta.9(patch_hash=7ed954b6aa14db3cf0b561fa8397e4a7b267185adf8abe7c1b5c3500b0d4b0fc)(@cfworker/json-schema@4.1.1)(@standard-schema/spec@1.1.0)(@types/json-schema@7.0.15)(@types/node@26.1.1)(esbuild@0.28.1)(hono@4.12.30)(jiti@2.7.0)(typebox@1.1.38)(typescript@5.9.3)(wrangler@4.111.0)(ws@8.21.1)(yaml@2.9.0)(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3)':
+  '@flue/github@2.0.0-nightly.202607230552(@flue/runtime@2.0.0-nightly.202607230552(typescript@5.9.3)(ws@8.21.1)(zod@4.4.3))':
     dependencies:
-      '@cloudflare/vite-plugin': 1.45.0(vite@8.1.4(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))(wrangler@4.111.0)
-      '@flue/runtime': 1.0.0-beta.9(@cfworker/json-schema@4.1.1)(@standard-schema/spec@1.1.0)(@types/json-schema@7.0.15)(typebox@1.1.38)(typescript@5.9.3)(ws@8.21.1)(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3)
-      '@flue/sdk': 1.0.0-beta.9
-      '@hono/node-server': 2.0.9(hono@4.12.30)
-      '@vercel/detect-agent': 1.2.3
-      debug: 4.4.3
-      minisearch: 7.2.0
-      package-up: 5.0.0
-      picocolors: 1.1.1
-      ulidx: 2.4.1
-      valibot: 1.4.2(typescript@5.9.3)
-      vite: 8.1.4(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0)
-    transitivePeerDependencies:
-      - '@cfworker/json-schema'
-      - '@standard-schema/spec'
-      - '@types/json-schema'
-      - '@types/node'
-      - '@vitejs/devtools'
-      - arktype
-      - bufferutil
-      - effect
-      - esbuild
-      - hono
-      - jiti
-      - less
-      - sass
-      - sass-embedded
-      - stylus
-      - sugarss
-      - supports-color
-      - sury
-      - terser
-      - tsx
-      - typebox
-      - typescript
-      - utf-8-validate
-      - wrangler
-      - ws
-      - yaml
-      - zod
-      - zod-openapi
-      - zod-to-json-schema
-
-  '@flue/github@1.0.0-beta.1':
-    dependencies:
+      '@flue/runtime': 2.0.0-nightly.202607230552(typescript@5.9.3)(ws@8.21.1)(zod@4.4.3)
       '@octokit/webhooks-types': 7.6.1
       hono: 4.12.22
 
-  '@flue/react@1.0.0-beta.9(@flue/sdk@1.0.0-beta.9)(react@18.3.1)':
+  '@flue/react@2.0.0-nightly.202607230552(@flue/sdk@2.0.0-nightly.202607230552)(react@18.3.1)':
     dependencies:
-      '@flue/sdk': 1.0.0-beta.9
+      '@flue/sdk': 2.0.0-nightly.202607230552
       react: 18.3.1
 
-  '@flue/runtime@1.0.0-beta.9(@cfworker/json-schema@4.1.1)(@standard-schema/spec@1.1.0)(@types/json-schema@7.0.15)(typebox@1.1.38)(typescript@5.9.3)(ws@8.21.1)(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3)':
+  '@flue/runtime@2.0.0-nightly.202607230552(typescript@5.9.3)(ws@8.21.1)(zod@4.4.3)':
     dependencies:
-      '@earendil-works/pi-agent-core': 0.80.7(@modelcontextprotocol/sdk@1.29.0(@cfworker/json-schema@4.1.1)(zod@4.4.3))(ws@8.21.1)(zod@4.4.3)
-      '@earendil-works/pi-ai': 0.80.7(@modelcontextprotocol/sdk@1.29.0(@cfworker/json-schema@4.1.1)(zod@4.4.3))(ws@8.21.1)(zod@4.4.3)
+      '@cfworker/json-schema': 4.1.1
+      '@earendil-works/pi-agent-core': 0.81.1(@modelcontextprotocol/sdk@1.29.0(@cfworker/json-schema@4.1.1)(zod@4.4.3))(ws@8.21.1)(zod@4.4.3)
+      '@earendil-works/pi-ai': 0.81.1(@modelcontextprotocol/sdk@1.29.0(@cfworker/json-schema@4.1.1)(zod@4.4.3))(ws@8.21.1)(zod@4.4.3)
       '@hono/node-server': 2.0.9(hono@4.12.30)
-      '@hono/standard-validator': 0.2.3(@standard-schema/spec@1.1.0)(hono@4.12.30)
       '@modelcontextprotocol/sdk': 1.29.0(@cfworker/json-schema@4.1.1)(zod@4.4.3)
-      '@standard-community/standard-json': 0.3.5(@standard-schema/spec@1.1.0)(@types/json-schema@7.0.15)(@valibot/to-json-schema@1.7.1(valibot@1.4.2(typescript@5.9.3)))(quansync@0.2.11)(typebox@1.1.38)(valibot@1.4.2(typescript@5.9.3))(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3)
-      '@standard-community/standard-openapi': 0.2.9(@standard-community/standard-json@0.3.5(@standard-schema/spec@1.1.0)(@types/json-schema@7.0.15)(@valibot/to-json-schema@1.7.1(valibot@1.4.2(typescript@5.9.3)))(quansync@0.2.11)(typebox@1.1.38)(valibot@1.4.2(typescript@5.9.3))(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3))(@standard-schema/spec@1.1.0)(openapi-types@12.1.3)(typebox@1.1.38)(valibot@1.4.2(typescript@5.9.3))(zod@4.4.3)
       '@valibot/to-json-schema': 1.7.1(valibot@1.4.2(typescript@5.9.3))
       hono: 4.12.30
-      hono-openapi: 1.3.1(@hono/standard-validator@0.2.3(@standard-schema/spec@1.1.0)(hono@4.12.30))(@standard-community/standard-json@0.3.5(@standard-schema/spec@1.1.0)(@types/json-schema@7.0.15)(@valibot/to-json-schema@1.7.1(valibot@1.4.2(typescript@5.9.3)))(quansync@0.2.11)(typebox@1.1.38)(valibot@1.4.2(typescript@5.9.3))(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3))(@standard-community/standard-openapi@0.2.9(@standard-community/standard-json@0.3.5(@standard-schema/spec@1.1.0)(@types/json-schema@7.0.15)(@valibot/to-json-schema@1.7.1(valibot@1.4.2(typescript@5.9.3)))(quansync@0.2.11)(typebox@1.1.38)(valibot@1.4.2(typescript@5.9.3))(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3))(@standard-schema/spec@1.1.0)(openapi-types@12.1.3)(typebox@1.1.38)(valibot@1.4.2(typescript@5.9.3))(zod@4.4.3))(@types/json-schema@7.0.15)(hono@4.12.30)(openapi-types@12.1.3)
-      js-yaml: 4.3.0
-      just-bash: 3.1.0
-      openapi-types: 12.1.3
-      quansync: 0.2.11
+      js-yaml: 5.2.1
       ulidx: 2.4.1
       valibot: 1.4.2(typescript@5.9.3)
     transitivePeerDependencies:
-      - '@cfworker/json-schema'
-      - '@standard-schema/spec'
-      - '@types/json-schema'
-      - arktype
       - bufferutil
-      - effect
       - supports-color
-      - sury
-      - typebox
       - typescript
       - utf-8-validate
       - ws
       - zod
-      - zod-openapi
-      - zod-to-json-schema
 
-  '@flue/sdk@1.0.0-beta.9':
+  '@flue/sdk@2.0.0-nightly.202607230552':
     dependencies:
       '@durable-streams/client': 0.2.6(patch_hash=a6e7c6b4939e7c46f3f21df639b087be6c415c4c88afd53e56f8f6f426c86787)
+
+  '@flue/vite@2.0.0-nightly.202607230552(hono@4.12.30)(typescript@5.9.3)(vite@8.1.5(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))(ws@8.21.1)(zod@4.4.3)':
+    dependencies:
+      '@flue/runtime': 2.0.0-nightly.202607230552(typescript@5.9.3)(ws@8.21.1)(zod@4.4.3)
+      '@hono/node-server': 2.0.9(hono@4.12.30)
+      magic-string: 1.0.0
+      tinyglobby: 0.2.17
+      ulidx: 2.4.1
+      vite: 8.1.5(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0)
+    transitivePeerDependencies:
+      - bufferutil
+      - hono
+      - supports-color
+      - typescript
+      - utf-8-validate
+      - ws
+      - zod
 
   '@fontsource-variable/geist@5.3.0': {}
 
@@ -6371,11 +6318,6 @@ snapshots:
 
   '@hono/node-server@2.0.9(hono@4.12.30)':
     dependencies:
-      hono: 4.12.30
-
-  '@hono/standard-validator@0.2.3(@standard-schema/spec@1.1.0)(hono@4.12.30)':
-    dependencies:
-      '@standard-schema/spec': 1.1.0
       hono: 4.12.30
 
   '@iconify/types@2.0.0': {}
@@ -7518,14 +7460,14 @@ snapshots:
   '@rolldown/binding-win32-x64-msvc@1.1.5':
     optional: true
 
-  '@rolldown/plugin-babel@0.2.3(@babel/core@7.29.7)(@babel/runtime@7.29.7)(rolldown@1.1.5)(vite@8.1.4(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))':
+  '@rolldown/plugin-babel@0.2.3(@babel/core@7.29.7)(@babel/runtime@7.29.7)(rolldown@1.1.5)(vite@8.1.5(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))':
     dependencies:
       '@babel/core': 7.29.7
       picomatch: 4.0.5
       rolldown: 1.1.5
     optionalDependencies:
       '@babel/runtime': 7.29.7
-      vite: 8.1.4(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0)
+      vite: 8.1.5(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0)
 
   '@rolldown/pluginutils@1.0.0-beta.27': {}
 
@@ -7737,28 +7679,6 @@ snapshots:
       tslib: 2.8.1
 
   '@speed-highlight/core@1.2.17': {}
-
-  '@standard-community/standard-json@0.3.5(@standard-schema/spec@1.1.0)(@types/json-schema@7.0.15)(@valibot/to-json-schema@1.7.1(valibot@1.4.2(typescript@5.9.3)))(quansync@0.2.11)(typebox@1.1.38)(valibot@1.4.2(typescript@5.9.3))(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3)':
-    dependencies:
-      '@standard-schema/spec': 1.1.0
-      '@types/json-schema': 7.0.15
-      quansync: 0.2.11
-    optionalDependencies:
-      '@valibot/to-json-schema': 1.7.1(valibot@1.4.2(typescript@5.9.3))
-      typebox: 1.1.38
-      valibot: 1.4.2(typescript@5.9.3)
-      zod: 4.4.3
-      zod-to-json-schema: 3.25.2(zod@4.4.3)
-
-  '@standard-community/standard-openapi@0.2.9(@standard-community/standard-json@0.3.5(@standard-schema/spec@1.1.0)(@types/json-schema@7.0.15)(@valibot/to-json-schema@1.7.1(valibot@1.4.2(typescript@5.9.3)))(quansync@0.2.11)(typebox@1.1.38)(valibot@1.4.2(typescript@5.9.3))(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3))(@standard-schema/spec@1.1.0)(openapi-types@12.1.3)(typebox@1.1.38)(valibot@1.4.2(typescript@5.9.3))(zod@4.4.3)':
-    dependencies:
-      '@standard-community/standard-json': 0.3.5(@standard-schema/spec@1.1.0)(@types/json-schema@7.0.15)(@valibot/to-json-schema@1.7.1(valibot@1.4.2(typescript@5.9.3)))(quansync@0.2.11)(typebox@1.1.38)(valibot@1.4.2(typescript@5.9.3))(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3)
-      '@standard-schema/spec': 1.1.0
-      openapi-types: 12.1.3
-    optionalDependencies:
-      typebox: 1.1.38
-      valibot: 1.4.2(typescript@5.9.3)
-      zod: 4.4.3
 
   '@standard-schema/spec@1.1.0': {}
 
@@ -8083,8 +8003,6 @@ snapshots:
     dependencies:
       valibot: 1.4.2(typescript@5.9.3)
 
-  '@vercel/detect-agent@1.2.3': {}
-
   '@vercel/oidc@3.2.0': {}
 
   '@vitejs/plugin-react@4.7.0(vite@6.4.3(@types/node@26.1.1)(jiti@2.7.0)(lightningcss@1.32.0)(yaml@2.9.0))':
@@ -8110,13 +8028,13 @@ snapshots:
 
   agent-base@7.1.4: {}
 
-  agents@0.14.5(@babel/core@7.29.7)(@babel/runtime@7.29.7)(ai@7.0.31(zod@4.4.3))(react@19.2.7)(rolldown@1.1.5)(vite@8.1.4(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))(zod@4.4.3):
+  agents@0.14.5(@babel/core@7.29.7)(@babel/runtime@7.29.7)(ai@7.0.31(zod@4.4.3))(react@19.2.7)(rolldown@1.1.5)(vite@8.1.5(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))(zod@4.4.3):
     dependencies:
       '@babel/plugin-proposal-decorators': 7.29.7(@babel/core@7.29.7)
       '@cfworker/json-schema': 4.1.1
       '@cloudflare/codemode': 0.3.8(@modelcontextprotocol/sdk@1.29.0(@cfworker/json-schema@4.1.1)(zod@4.4.3))(ai@7.0.31(zod@4.4.3))(zod@4.4.3)
       '@modelcontextprotocol/sdk': 1.29.0(@cfworker/json-schema@4.1.1)(zod@4.4.3)
-      '@rolldown/plugin-babel': 0.2.3(@babel/core@7.29.7)(@babel/runtime@7.29.7)(rolldown@1.1.5)(vite@8.1.4(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))
+      '@rolldown/plugin-babel': 0.2.3(@babel/core@7.29.7)(@babel/runtime@7.29.7)(rolldown@1.1.5)(vite@8.1.5(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))
       ai: 7.0.31(zod@4.4.3)
       cron-schedule: 6.0.0
       esbuild: 0.28.1
@@ -8130,7 +8048,7 @@ snapshots:
       yargs: 18.0.0
       zod: 4.4.3
     optionalDependencies:
-      vite: 8.1.4(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0)
+      vite: 8.1.5(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0)
     transitivePeerDependencies:
       - '@babel/core'
       - '@babel/plugin-transform-runtime'
@@ -8909,8 +8827,6 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  find-up-simple@1.0.1: {}
-
   find-up@3.0.0:
     dependencies:
       locate-path: 3.0.0
@@ -9157,16 +9073,6 @@ snapshots:
       property-information: 7.2.0
       space-separated-tokens: 2.0.2
 
-  hono-openapi@1.3.1(@hono/standard-validator@0.2.3(@standard-schema/spec@1.1.0)(hono@4.12.30))(@standard-community/standard-json@0.3.5(@standard-schema/spec@1.1.0)(@types/json-schema@7.0.15)(@valibot/to-json-schema@1.7.1(valibot@1.4.2(typescript@5.9.3)))(quansync@0.2.11)(typebox@1.1.38)(valibot@1.4.2(typescript@5.9.3))(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3))(@standard-community/standard-openapi@0.2.9(@standard-community/standard-json@0.3.5(@standard-schema/spec@1.1.0)(@types/json-schema@7.0.15)(@valibot/to-json-schema@1.7.1(valibot@1.4.2(typescript@5.9.3)))(quansync@0.2.11)(typebox@1.1.38)(valibot@1.4.2(typescript@5.9.3))(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3))(@standard-schema/spec@1.1.0)(openapi-types@12.1.3)(typebox@1.1.38)(valibot@1.4.2(typescript@5.9.3))(zod@4.4.3))(@types/json-schema@7.0.15)(hono@4.12.30)(openapi-types@12.1.3):
-    dependencies:
-      '@standard-community/standard-json': 0.3.5(@standard-schema/spec@1.1.0)(@types/json-schema@7.0.15)(@valibot/to-json-schema@1.7.1(valibot@1.4.2(typescript@5.9.3)))(quansync@0.2.11)(typebox@1.1.38)(valibot@1.4.2(typescript@5.9.3))(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3)
-      '@standard-community/standard-openapi': 0.2.9(@standard-community/standard-json@0.3.5(@standard-schema/spec@1.1.0)(@types/json-schema@7.0.15)(@valibot/to-json-schema@1.7.1(valibot@1.4.2(typescript@5.9.3)))(quansync@0.2.11)(typebox@1.1.38)(valibot@1.4.2(typescript@5.9.3))(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3))(@standard-schema/spec@1.1.0)(openapi-types@12.1.3)(typebox@1.1.38)(valibot@1.4.2(typescript@5.9.3))(zod@4.4.3)
-      '@types/json-schema': 7.0.15
-      openapi-types: 12.1.3
-    optionalDependencies:
-      '@hono/standard-validator': 0.2.3(@standard-schema/spec@1.1.0)(hono@4.12.30)
-      hono: 4.12.30
-
   hono@4.12.22: {}
 
   hono@4.12.30: {}
@@ -9313,6 +9219,10 @@ snapshots:
   js-tokens@4.0.0: {}
 
   js-yaml@4.3.0:
+    dependencies:
+      argparse: 2.0.1
+
+  js-yaml@5.2.1:
     dependencies:
       argparse: 2.0.1
 
@@ -9477,6 +9387,10 @@ snapshots:
       react: 18.3.1
 
   magic-string@0.30.21:
+    dependencies:
+      '@jridgewell/sourcemap-codec': 1.5.5
+
+  magic-string@1.0.0:
     dependencies:
       '@jridgewell/sourcemap-codec': 1.5.5
 
@@ -9985,13 +9899,23 @@ snapshots:
       - bufferutil
       - utf-8-validate
 
+  miniflare@4.20260721.0:
+    dependencies:
+      '@cspotcode/source-map-support': 0.8.1
+      sharp: 0.34.5
+      undici: 7.28.0
+      workerd: 1.20260721.1
+      ws: 8.21.0
+      youch: 4.1.0-beta.10
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
+
   minimatch@10.2.5:
     dependencies:
       brace-expansion: 5.0.7
 
   minimist@1.2.8: {}
-
-  minisearch@7.2.0: {}
 
   mkdirp-classic@0.5.3:
     optional: true
@@ -10111,8 +10035,6 @@ snapshots:
       ws: 8.21.1
       zod: 4.4.3
 
-  openapi-types@12.1.3: {}
-
   ora@8.2.0:
     dependencies:
       chalk: 5.6.2
@@ -10141,10 +10063,6 @@ snapshots:
   p-try@2.2.0: {}
 
   package-manager-detector@1.7.0: {}
-
-  package-up@5.0.0:
-    dependencies:
-      find-up-simple: 1.0.1
 
   papaparse@5.5.4: {}
 
@@ -10295,8 +10213,6 @@ snapshots:
     dependencies:
       es-define-property: 1.0.1
       side-channel: 1.1.1
-
-  quansync@0.2.11: {}
 
   queue-microtask@1.2.3: {}
 
@@ -11149,7 +11065,7 @@ snapshots:
       lightningcss: 1.32.0
       yaml: 2.9.0
 
-  vite@8.1.4(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0):
+  vite@8.1.5(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0):
     dependencies:
       lightningcss: 1.32.0
       picomatch: 4.0.5
@@ -11183,6 +11099,14 @@ snapshots:
       '@cloudflare/workerd-linux-arm64': 1.20260710.1
       '@cloudflare/workerd-windows-64': 1.20260710.1
 
+  workerd@1.20260721.1:
+    optionalDependencies:
+      '@cloudflare/workerd-darwin-64': 1.20260721.1
+      '@cloudflare/workerd-darwin-arm64': 1.20260721.1
+      '@cloudflare/workerd-linux-64': 1.20260721.1
+      '@cloudflare/workerd-linux-arm64': 1.20260721.1
+      '@cloudflare/workerd-windows-64': 1.20260721.1
+
   wrangler@4.111.0:
     dependencies:
       '@cloudflare/kv-asset-handler': 0.5.0
@@ -11193,6 +11117,22 @@ snapshots:
       path-to-regexp: 6.3.0
       unenv: 2.0.0-rc.24
       workerd: 1.20260710.1
+    optionalDependencies:
+      fsevents: 2.3.3
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
+
+  wrangler@4.113.0:
+    dependencies:
+      '@cloudflare/kv-asset-handler': 0.5.0
+      '@cloudflare/unenv-preset': 2.16.1(unenv@2.0.0-rc.24)(workerd@1.20260721.1)
+      blake3-wasm: 2.1.5
+      esbuild: 0.28.1
+      miniflare: 4.20260721.0
+      path-to-regexp: 6.3.0
+      unenv: 2.0.0-rc.24
+      workerd: 1.20260721.1
     optionalDependencies:
       fsevents: 2.3.3
     transitivePeerDependencies:

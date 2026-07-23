@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 /**
  * Data-browser (admin) unit tests — the host-agnostic collection model in
- * @hoth/core, exercised with an in-memory KV and injected run-registry deps.
- * Zero Cloudflare/Flue present, so this runs anywhere `node` does.
+ * @hoth/core, exercised with an in-memory KV. Zero Cloudflare/Flue present,
+ * so this runs anywhere `node` does.
  *
  * Covers: KV listing (cursor pagination + grouping + sort), value reads
  * (JSON vs opaque vs missing), the session index round-trip, and the generic
- * collection resolvers (kv / sessions / runs, including empty + failure notes).
+ * collection resolvers (kv / sessions). The beta `runs` collection is gone —
+ * Flue v2 removed the workflow-run registry.
  */
 import {
   listKvEntries,
@@ -120,12 +121,11 @@ await (async function run() {
 
   // --- collections descriptor --------------------------------------------
   const cols = adminCollections('STORE');
-  check('adminCollections exposes kv/sessions/runs', cols.map((c) => c.id).join(',') === 'kv,sessions,runs');
+  check('adminCollections exposes kv/sessions', cols.map((c) => c.id).join(',') === 'kv,sessions');
   check('adminCollections labels kv with namespace', cols[0].label.includes('STORE'));
 
   // --- generic record listing --------------------------------------------
-  const fakeRuns = { runs: [{ runId: 'run-1', workflowName: 'nightly', status: 'completed' }] };
-  const deps = { kv, listRuns: async () => fakeRuns, getRun: async (id) => (id === 'run-1' ? fakeRuns.runs[0] : null) };
+  const deps = { kv };
 
   const kvRecords = await listCollectionRecords('kv', deps);
   check('listCollectionRecords(kv) maps keys to records', kvRecords.records.length === 5);
@@ -135,33 +135,16 @@ await (async function run() {
   check('listCollectionRecords(sessions) exposes createdAt as sublabel', datedRecords.records[0]?.sublabel === '2026-07-19T23:00:00.000Z');
   check('listCollectionRecords(sessions) keeps newest-first order', datedRecords.records[0]?.id === 'newest');
   check('listCollectionRecords(sessions) omits sublabel when undated', datedRecords.records.at(-1)?.sublabel === undefined);
-  const runRecords = await listCollectionRecords('runs', deps);
-  check('listCollectionRecords(runs) uses injected listRuns', runRecords.records[0]?.id === 'run-1');
-  check('listCollectionRecords(runs) labels status', runRecords.records[0]?.label.includes('completed'));
   check('listCollectionRecords(unknown) returns null', (await listCollectionRecords('nope', deps)) === null);
-
-  // runs: empty note + failure note
-  const emptyRuns = await listCollectionRecords('runs', { kv, listRuns: async () => ({ runs: [] }) });
-  check('listCollectionRecords(runs) notes empty', !!emptyRuns.note && emptyRuns.records.length === 0);
-  const brokenRuns = await listCollectionRecords('runs', {
-    kv,
-    listRuns: async () => {
-      throw new Error('registry down');
-    },
-  });
-  check('listCollectionRecords(runs) survives registry error', brokenRuns.records.length === 0 && brokenRuns.note.includes('registry down'));
-  const noRunApi = await listCollectionRecords('runs', { kv });
-  check('listCollectionRecords(runs) handles missing run API', noRunApi.records.length === 0 && !!noRunApi.note);
+  check('listCollectionRecords(runs) is gone in v2', (await listCollectionRecords('runs', deps)) === null);
 
   // --- generic record detail ---------------------------------------------
   const kvDetail = await readCollectionRecord('kv', 'bundle:9f8a', deps);
   check('readCollectionRecord(kv) returns parsed value', kvDetail?.kind === 'kv' && kvDetail?.json?.skillName === 'trip-planner');
   const sessDetail = await readCollectionRecord('sessions', '9f8a', deps);
   check('readCollectionRecord(sessions) returns the session', sessDetail?.kind === 'session' && sessDetail?.session?.backend === 'b');
-  const runDetail = await readCollectionRecord('runs', 'run-1', deps);
-  check('readCollectionRecord(runs) returns the run', runDetail?.kind === 'run' && runDetail?.run?.workflowName === 'nightly');
   check('readCollectionRecord(kv) missing -> null', (await readCollectionRecord('kv', 'nope', deps)) === null);
-  check('readCollectionRecord(runs) missing -> null', (await readCollectionRecord('runs', 'ghost', deps)) === null);
+  check('readCollectionRecord(runs) is gone in v2', (await readCollectionRecord('runs', 'run-1', deps)) === null);
   check('readCollectionRecord(unknown) -> null', (await readCollectionRecord('zzz', 'x', deps)) === null);
 })();
 

@@ -2,7 +2,8 @@
  * Hoth POC UI (plan §10): a chat with an A/B backend dropdown, plus a
  * read-only Data browser over everything the backends persist in Cloudflare.
  *
- * Chat: two FlueClients (base URL fixed at construction) selected via
+ * Chat: Flue v2 clients are conversation-scoped — one createFlueClient per
+ * conversation URL (`<backend>/agents/hoth/<sessionId>`), passed to
  * useFlueAgent({ client }). New session mints a lowercase UUID; for B, POST the
  * one-JSON-string bundle and await the 2xx before opening the chat (seeds the
  * bearer mapping and pre-warms the container); for A, POST the provision route.
@@ -12,9 +13,10 @@
  *   - kv        — the raw KV namespace (bundles, bearers, tags, session index)
  *   - sessions  — one record per conversation id (from the session index); the
  *                 detail streams the live conversation held in the Flue agent
- *                 Durable Object (its SQLite message/event tables)
- *   - runs      — the Flue registry's workflow-run index (listRuns/getRun)
- * No id is needed upfront — every level is enumerated from the server.
+ *                 Durable Object (its SQLite conversation stream)
+ * (The beta `runs` collection is gone — Flue v2 removed the workflow-run
+ * registry.) No id is needed upfront — every level is enumerated from the
+ * server.
  *
  * POC caveat (plan §10): the browser as bundle-origin inverts the production
  * trust model — fine for the POC, not the prod seam.
@@ -41,6 +43,21 @@ type BackendKey = keyof typeof BACKENDS;
 type View = 'chat' | 'data' | 'chats';
 
 const API_KEY_STORAGE = 'hoth-api-key';
+
+/** The one conversation URL a v2 FlueClient addresses (mount + session id). */
+const conversationUrl = (base: string, sessionId: string) =>
+  `${base}/agents/hoth/${encodeURIComponent(sessionId)}`;
+
+/** Conversation-scoped client (v2: no deployment-wide client, no name/id). */
+function useConversationClient(base: string, apiKey: string, sessionId?: string) {
+  return useMemo(
+    () =>
+      sessionId
+        ? createFlueClient({ url: conversationUrl(base, sessionId), token: apiKey })
+        : undefined,
+    [base, apiKey, sessionId],
+  );
+}
 
 /** A request from the Chat tab to jump straight to a session in the browser. */
 type InspectTarget = { backend: BackendKey; sessionId: string };
@@ -176,13 +193,7 @@ function ChatView({
   // an existing conversation can be re-opened (simulating a reconnect/refresh).
   const [sessionInput, setSessionInput] = useState('');
 
-  const clients = useMemo(
-    () => ({
-      a: createFlueClient({ baseUrl: BACKENDS.a.baseUrl, token: apiKey }),
-      b: createFlueClient({ baseUrl: BACKENDS.b.baseUrl, token: apiKey }),
-    }),
-    [apiKey],
-  );
+  const client = useConversationClient(BACKENDS[backend].baseUrl, apiKey, sessionId);
 
   // Report the ready session up to App so the "Chats (A/B)" tab can mirror it.
   useEffect(() => {
@@ -282,21 +293,22 @@ function ChatView({
         {sessionId ? `session ${sessionId} · ` : ''}
         {detail || (apiKey ? 'Start a new session, or paste a session id and open it.' : '')}
       </p>
-      {sessionId && phase === 'ready' ? (
-        <AgentChat key={`${backend}:${sessionId}`} client={clients[backend]} sessionId={sessionId} />
+      {client && phase === 'ready' ? (
+        <AgentChat key={`${backend}:${sessionId}`} client={client} />
       ) : null}
     </>
   );
 }
 
-function Chat({ client, sessionId }: { client: ReturnType<typeof createFlueClient>; sessionId: string }) {
+function Chat({ client }: { client: ReturnType<typeof createFlueClient> }) {
   const [input, setInput] = useState('');
   // live: 'sse' — ONE held connection streams both idle and active generation.
-  // Requires the @durable-streams/client patch (patches/): stock beta only
-  // opens SSE after reaching up-to-date, so it busy-polls catch-up reads while
-  // an agent is generating (never up-to-date) — a request flood. The patch
-  // sends live=sse on the first request so the held stream opens immediately.
-  const agent = useFlueAgent({ name: 'hoth', id: sessionId, client, live: 'sse' });
+  // Still requires the @durable-streams/client patch (patches/): the v2 SDK
+  // pins the same 0.2.6 client, whose stock build only opens SSE after
+  // reaching up-to-date, so it busy-polls catch-up reads while an agent is
+  // generating (never up-to-date) — a request flood. The patch sends live=sse
+  // on the first request so the held stream opens immediately.
+  const agent = useFlueAgent({ client, live: 'sse' });
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -366,20 +378,20 @@ const PanelB = AgentChat;
  * mirrored from the Chat tab via `active`.
  */
 function DualChatView({ apiKey, active }: { apiKey: string; active?: ActiveSession }) {
-  const clients = useMemo(
-    () => ({
-      a: createFlueClient({ baseUrl: BACKENDS.a.baseUrl, token: apiKey }),
-      b: createFlueClient({ baseUrl: BACKENDS.b.baseUrl, token: apiKey }),
-    }),
-    [apiKey],
+  // One conversation-scoped client for the mirrored session; each panel's
+  // useFlueAgent still opens its own stream over it, so the panels remain
+  // independent replicas.
+  const client = useConversationClient(
+    BACKENDS[active?.backend ?? 'a'].baseUrl,
+    apiKey,
+    active?.sessionId,
   );
 
-  if (!active) {
+  if (!active || !client) {
     return <p className="status">Start or open a session on the Chat tab — both panels here mirror it.</p>;
   }
 
   const { backend, sessionId } = active;
-  const client = clients[backend];
   return (
     <>
       <p className="status">
@@ -389,11 +401,11 @@ function DualChatView({ apiKey, active }: { apiKey: string; active?: ActiveSessi
       <div className="dual">
         <div className="pane">
           <h3 className="pane-title">Panel A · Chat</h3>
-          <Chat key={`a:${backend}:${sessionId}`} client={client} sessionId={sessionId} />
+          <Chat key={`a:${backend}:${sessionId}`} client={client} />
         </div>
         <div className="pane">
           <h3 className="pane-title">Panel B · ai-elements</h3>
-          <PanelB key={`b:${backend}:${sessionId}`} client={client} sessionId={sessionId} />
+          <PanelB key={`b:${backend}:${sessionId}`} client={client} />
         </div>
       </div>
     </>
@@ -607,7 +619,6 @@ function RecordsList({
 type Detail =
   | { kind: 'kv'; key: string; value: string; size: number; json: unknown }
   | { kind: 'session'; id: string; session: Record<string, unknown> }
-  | { kind: 'run'; id: string; run: unknown }
   | Record<string, unknown>;
 
 function RecordDetail({
@@ -685,8 +696,6 @@ function RecordDetail({
         <KvValue value={(detail as { value: string }).value} json={(detail as { json: unknown }).json} />
       ) : isSession ? (
         <SessionDetail base={base} apiKey={apiKey} backend={backend} session={(detail as { session: Record<string, unknown> }).session} sessionId={record.id} />
-      ) : detail.kind === 'run' ? (
-        <pre className="value">{JSON.stringify((detail as { run: unknown }).run, null, 2)}</pre>
       ) : (
         <pre className="value">{JSON.stringify(detail, null, 2)}</pre>
       )}
@@ -782,10 +791,10 @@ function SessionDetail({
 
 /** Reads the stored conversation (Flue agent DO SQLite) for a session id. */
 function ConversationView({ base, apiKey, sessionId }: { base: string; apiKey: string; backend: BackendKey; sessionId: string }) {
-  const client = useMemo(() => createFlueClient({ baseUrl: base, token: apiKey }), [base, apiKey]);
+  const client = useConversationClient(base, apiKey, sessionId);
   // Read-only catch-up: 'long-poll' reaches the stored state without holding the
   // SSE stream open (no live generation to follow when browsing).
-  const agent = useFlueAgent({ name: 'hoth', id: sessionId, client, live: 'long-poll' });
+  const agent = useFlueAgent({ client, live: 'long-poll' });
 
   if (agent.messages.length === 0) {
     return <p className="status">No messages stored for this conversation ({agent.status}).</p>;

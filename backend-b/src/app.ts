@@ -14,10 +14,10 @@
  * reused id is rejected (plan §6/§13 C5).
  */
 import { getSandbox } from '@cloudflare/sandbox';
-import { getRun, listRuns } from '@flue/runtime';
-import { flue } from '@flue/runtime/routing';
+import { createAgentRouter } from '@flue/runtime/routing';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { Hoth } from './agents/hoth';
 import {
   apiKeyGuard,
   BundleValidationError,
@@ -52,25 +52,25 @@ const app = new Hono<{ Bindings: Env }>();
 // busy-polls catch-up reads forever. See STREAM_PROTOCOL_HEADERS.
 app.use('*', cors({ exposeHeaders: STREAM_PROTOCOL_HEADERS }));
 
-// GitHub webhook (POST /channels/github/webhook). Registered BEFORE the API
+// GitHub webhook (POST /channels/github/webhook). Mounted BEFORE the API
 // key guard: GitHub can't send our bearer — the channel authenticates each
 // delivery itself via X-Hub-Signature-256 over the raw body.
-for (const route of channel.routes) {
-  app.on(route.method, `/channels/github${route.path}`, route.handler);
-}
+app.route('/channels/github', channel.route());
 
 // Every route except /health requires Authorization: Bearer <API_TOKEN>.
-// Fail-closed if API_TOKEN is unset (503). Covers the flue() agent/stream
-// routes too, since the guard runs before app.route('/', flue()).
+// Fail-closed if API_TOKEN is unset (503). Covers the mounted agent
+// conversation/stream routes too, since the guard runs before the
+// createAgentRouter mount below.
 app.use('*', apiKeyGuard());
 
 app.get('/health', (c) => c.json({ ok: true, backend: 'b', delivery: 'dynamic-bundle' }));
 
 // Read-only data browser (behind the API-key guard). Presents every backing
 // store as a generic collection so the frontend is a plain entities -> records
-// -> record tree. Never mutates. `deps` injects the KV binding and the Flue run
-// registry API (getRun/listRuns) into the host-agnostic core resolver.
-const adminDeps = (c: { env: Env }) => ({ kv: c.env.STORE, listRuns: () => listRuns({ limit: 100 }), getRun });
+// -> record tree. Never mutates. `deps` injects the KV binding into the
+// host-agnostic core resolver. (Flue v2 removed the workflow-run registry, so
+// KV and the session index are the only backing stores left.)
+const adminDeps = (c: { env: Env }) => ({ kv: c.env.STORE });
 app.get('/admin/collections', (c) => c.json({ backend: 'b', collections: adminCollections('STORE') }));
 app.get('/admin/collections/:cid/records', async (c) => {
   const result = await listCollectionRecords(c.req.param('cid'), adminDeps(c));
@@ -186,6 +186,9 @@ app.delete('/sessions/:id', async (c) => {
   return c.json({ ok: true });
 });
 
-app.route('/', flue());
+// Explicit v2 mount (no auto-router): serves POST/GET /agents/hoth/:id and
+// the conversation stream — the same URL surface the beta flue() router
+// exposed for this agent, so the frontend needs no path changes.
+app.route('/agents/hoth', createAgentRouter(Hoth));
 
 export default app;

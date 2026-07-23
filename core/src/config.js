@@ -33,12 +33,14 @@ export const DEFAULT_LLM = { provider: 'openrouter', model: 'deepseek/deepseek-v
 
 /**
  * Env-driven LLM setup shared by both backends. Registers any provider
- * override with Flue and returns the model specifier to hand to defineAgent.
+ * override and returns the model specifier to hand to useModel().
  *
  * LLM_PROVIDER: "cloudflare" (AI binding, keyless) | "openrouter" |
  * "custom" (any OpenAI-compatible endpoint at LLM_BASE_URL). LLM_API_KEY and
- * LLM_BASE_URL apply to every provider except "cloudflare". Takes Flue's
- * registerProvider as a parameter so core stays dependency-free.
+ * LLM_BASE_URL apply to every provider except "cloudflare". Takes a
+ * registerProvider(name, { api?, baseUrl?, apiKey? }) adapter as a parameter
+ * so core stays dependency-free — each backend's llm.ts implements it (on
+ * Flue v2 via setProvider + Pi's createProvider).
  */
 export function configureLlm(registerProvider, env) {
   const provider = env.LLM_PROVIDER || DEFAULT_LLM.provider;

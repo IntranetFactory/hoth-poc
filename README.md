@@ -39,13 +39,14 @@ scripts/     node-smoke.mjs (portability, zero Cloudflare) · acceptance.mjs (C1
 - Node **>= 22.18** (Flue requirement; `nvm use 22.22.0`).
 - pnpm, Docker (for building the sandbox container image), a Cloudflare account with
   **Workers Paid + Containers** and **Workers AI** enabled.
-- Two dependency patches under `patches/` (applied automatically by `pnpm install`):
-  - `@flue/cli` — a Windows `file://` import bug in the Cloudflare config reader.
+- One dependency patch under `patches/` (applied automatically by `pnpm install`):
   - `@durable-streams/client` — opens the held **SSE** connection on the first `updates`
-    request in `live:'sse'` mode. Stock beta only opens SSE after reaching up-to-date, so
-    while an agent is actively generating (never up-to-date) it busy-polls catch-up reads at
-    network speed — a request flood. `node scripts/verify-patch.mjs` proves the first request
-    now carries `live=sse`.
+    request in `live:'sse'` mode. The stock 0.2.6 client (still pinned by @flue/sdk v2) only
+    opens SSE after reaching up-to-date, so while an agent is actively generating (never
+    up-to-date) it busy-polls catch-up reads at network speed — a request flood.
+    `node scripts/verify-patch.mjs` proves the first request now carries `live=sse`.
+  - (The beta-era `@flue/cli` patch is gone: Flue v2 replaced the `flue` CLI with Vite —
+    `@flue/vite` + `@cloudflare/vite-plugin`.)
 
 ## Build & run
 
@@ -62,8 +63,8 @@ pnpm dev:frontend      # http://localhost:5173  (talks to localhost:3583/3584 in
 ```bash
 pnpm deploy            # bundle + deploy A + B + frontend, in order
 # or individually:
-pnpm deploy:a          # flue build + wrangler deploy backend A (creates its container app)
-pnpm deploy:b          # flue build + wrangler deploy backend B
+pnpm deploy:a          # vite build + wrangler deploy backend A (creates its container app)
+pnpm deploy:b          # vite build + wrangler deploy backend B
 pnpm deploy:frontend   # vite build (URLs from frontend/.env.production) + wrangler deploy
 ```
 

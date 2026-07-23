@@ -4,11 +4,11 @@
  * tables, collapsible tool-call cards, streamed reasoning, auto-scroll, and a
  * real busy indicator.
  *
- * Data source is identical to Panel A's `Chat`: `useFlueAgent(... live:'sse')`
- * against the same agent Durable Object, so both panels still converge. flue's
- * `FlueConversationMessage` mirrors the AI SDK v5 `UIMessage` shape that
- * ai-elements consumes, so mapping is near 1:1 — only role/status need trivial
- * maps.
+ * Data source is identical to Panel A's `Chat`: `useFlueAgent({ client,
+ * live:'sse' })` against the same agent Durable Object (v2 conversation-scoped
+ * client), so both panels still converge. flue's `FlueConversationMessage`
+ * mirrors the AI SDK v5 `UIMessage` shape that ai-elements consumes, so
+ * mapping is near 1:1 — only role/status need trivial maps.
  */
 import { useFlueAgent } from '@flue/react';
 import type { FlueClient } from '@flue/sdk';
@@ -47,10 +47,12 @@ function toChatStatus(status: ReturnType<typeof useFlueAgent>['status']): ChatSt
   return 'ready';
 }
 
-export function AgentChat({ client, sessionId }: { client: FlueClient; sessionId: string }) {
+export function AgentChat({ client }: { client: FlueClient }) {
   const [input, setInput] = useState('');
-  // One held SSE stream (same as Panel A) — needs the @durable-streams/client patch.
-  const agent = useFlueAgent({ name: 'hoth', id: sessionId, client, live: 'sse' });
+  // One held SSE stream (same as Panel A) — needs the @durable-streams/client
+  // patch. The v2 client is conversation-scoped, so no name/id here: the
+  // conversation is whatever URL the client was constructed with.
+  const agent = useFlueAgent({ client, live: 'sse' });
 
   const chatStatus = toChatStatus(agent.status);
   // 'submitted' and 'streaming' both mean "generating". flue exposes no cancel,
