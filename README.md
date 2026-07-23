@@ -29,7 +29,7 @@ from Workers assets with the two backend URLs baked in at build time.
 ```
 agents/      SOURCE OF TRUTH for every agent. One folder per agent:
              agents/<name>/agent.jsonc      REQUIRED config (folders without it are
-                                            skipped) — schema: agents/agent.schema.json
+                                            skipped) — schema: core/agent.schema.json
              agents/<name>/INSTRUCTIONS.md  optional, appended to the config instructions
              agents/<name>/skills/<skill>/  0..16 skills (each needs a SKILL.md)
 core/        Host-agnostic Flue-core seams (no Cloudflare imports):
@@ -62,6 +62,7 @@ scripts/     bundle.mjs (agent bundler CLI) · node-smoke.mjs (portability, zero
   "instructions": "…",                // agent.jsonc instructions + INSTRUCTIONS.md (appended)
   "model": "openrouter/…",            // optional, pre-normalized (see LLM configuration)
   "modelBaseUrl": "https://…",        // optional, from model_base_url
+  "proxyWhitelist": ["postman-echo.com"],  // optional — DENY-ALL egress when absent
   "skills": { "planner": { "SKILL.md": "…", "references/…": "…" } }  // 0..16 skills
 }
 ```
@@ -151,6 +152,38 @@ Two layers:
   transport only — auth is always the worker-wide `LLM_API_KEY` secret. Backend A applies
   its fixed agent's override at build time; backend B per session from the bundle.
 
+## Egress (per-agent proxy_whitelist)
+
+Egress from an agent's sandbox is governed by the agent's own `proxy_whitelist` in
+`agent.jsonc` — an array of host globs (`"www.semantius.com"` exact, `"*.semantius.ai"`
+subdomains only). **Deny-all when absent**: an agent without the property (or with an
+empty list) can make no outbound request at all. There is no global whitelist anymore.
+The list rides the agent bundle as `proxyWhitelist`; backend B maps it to the session's
+container in KV at ingest (`whitelist:<containerId>`, self-healed by the agent
+initializer — a deleted session stays deny-all) and both outbound handlers in
+`src/cloudflare.ts` resolve it per invocation. Backend A bakes its fixed agent's list at
+build time from the generated meta. The sentinel→key swap (`brokerEgress`) and the echo
+bearer injection both sit behind this gate; a request to a non-whitelisted host is
+rejected with 403 even when it carries the credential sentinel.
+
+**HTTPS transport note:** with `interceptHttps = true` the sandbox runtime provisions the
+interceptor CA at `/etc/cloudflare/certs/cloudflare-containers-ca.crt`, MITMs port 443,
+and handles CA trust **out of the box**: at container boot the in-container runtime sets
+`NODE_EXTRA_CA_CERTS` to the CA and merges it into the system bundle, pointing
+`SSL_CERT_FILE`, `CURL_CA_BUNDLE`, `REQUESTS_CA_BUNDLE`, and `GIT_SSL_CAINFO` at the
+merged bundle — every exec'd process (node, bun/semantius, curl, python, git) inherits
+working trust, so **a whitelisted host works from every tool** with no per-image wiring
+(verified by inspecting `/container-server/sandbox` in the `0.12.3` image; proved live
+by the `curl-check` skill-check op in acceptance). Plan §7's early "port 443 hangs"
+measurement predates `interceptHttps` — with interception off, no CA exists and TLS
+against the proxy cannot validate. ALL sandbox egress is HTTPS now — `opening-times.js`
+calls the echo host over 443 and the bearer rides inside TLS.
+
+**Session substrate expires after 24 h (fail-closed by design):** the stored agent
+bundle, bearer, and whitelist mappings all carry a 24 h TTL, and chat-session bearers
+are never re-minted (plan §13 C5). A chat session older than that loses egress and — on
+a cold container — its skills; start a new session.
+
 ## Data browser
 
 The frontend **Data** tab navigates all Cloudflare-stored data as a generic
@@ -231,11 +264,11 @@ C1 (A is OOTB/static, no agent ingest), C2 (B per-session bearers + tenant tags)
 source of truth — A image == bundle == B reconstructed, byte-identical), C4 (same result A
 vs B — `opening-times.js` stdout byte-for-byte, plus the injected bearer reaching the echo
 upstream while the container sends none), C5 (uniqueness guard + fail-closed egress), plus
-clean-base, zero-skill-agent, and hostile-bundle checks.
+clean-base, zero-skill-agent, per-agent-egress deny-all, and hostile-bundle checks.
 
 ## Verified results
 
-All 26 acceptance checks pass against the deployed Workers, and both backends drive the LLM
+All 30 acceptance checks pass against the deployed Workers, and both backends drive the LLM
 end-to-end with the identical `activate_skill → read → bash` sequence and matching opening
 times. Two wiring findings and the egress HTTP-vs-HTTPS caveat are recorded in
 [`hoth-poc-plan.md`](./hoth-poc-plan.md) §7.
@@ -243,6 +276,6 @@ times. Two wiring findings and the egress HTTP-vs-HTTPS caveat are recorded in
 ## The `/sessions/:id/skill-check` route
 
 A **bounded** test affordance (behind the API-key guard): it runs one of a fixed set of
-deterministic commands (`opening-times`, `hash-skill`, `count-skill-files`) built server-side
-from strictly validated structured params — **not** arbitrary shell. It exists to drive the
-acceptance oracle; it is not a product route.
+deterministic commands (`opening-times`, `hash-skill`, `count-skill-files`, `curl-check`,
+`semantius-whoami`) built server-side from strictly validated structured params — **not**
+arbitrary shell. It exists to drive the acceptance oracle; it is not a product route.

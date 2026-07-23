@@ -22,6 +22,7 @@ export const KV_GROUPS = {
   agent: 'Agent bundle (one immutable bundle per session id)',
   bearer: 'Per-container egress bearer (containerId -> token)',
   tag: 'Per-container tenant tag (containerId -> tenant)',
+  whitelist: 'Per-container egress whitelist (containerId -> allowed hosts)',
 };
 
 export const SESSION_KEY_PREFIX = 'session:';

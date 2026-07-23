@@ -1,4 +1,8 @@
 {
-  "$schema": "../agent.schema.json",
-  "instructions": "You are helping users to manage their Semantius data platform."
+  "$schema": "../../core/agent.schema.json",
+  "instructions": "You are helping users to manage their Semantius data platform.",
+  "proxy_whitelist": [
+    "*.semantius.ai",
+    "www.semantius.com"
+  ]
 }

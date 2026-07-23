@@ -16,15 +16,11 @@ export const ECHO_HOST = 'postman-echo.com';
  */
 export const SEMANTIUS_KEY_SENTINEL = '__sak__';
 
-/**
- * Egress domain whitelist for the catch-all secret broker (brokerEgress). A
- * request may leave the sandbox — and is eligible for the __sak__ → real-key
- * swap — only when its host matches one of these globs. Everything else is
- * rejected, including a sentinel-bearing request to a non-whitelisted host,
- * which is treated as an exfiltration attempt (the real key is never sent
- * there). `*.<domain>` matches any subdomain of <domain>, not the bare apex.
- */
-export const DOMAIN_WHITELIST = ['*.semantius.ai'];
+// The egress whitelist is PER AGENT since the proxy_whitelist refactor:
+// agent.jsonc `proxy_whitelist` -> bundle `proxyWhitelist` -> resolved per
+// containerId at egress (backend B: KV mapping via putEgressWhitelist;
+// backend A: baked build-time meta). An agent without the property gets
+// DENY-ALL egress. See core/agent.schema.json and core/src/egress.js.
 
 /** Default LLM settings; override per-worker with the LLM_PROVIDER /
  * LLM_MODEL / LLM_BASE_URL vars and the LLM_API_KEY secret. Provider

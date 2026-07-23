@@ -70,6 +70,7 @@ for (const [name, bundle] of bundles) {
   console.log(`  baseImage: ${bundle.baseImage}`);
   if (bundle.model) console.log(`  model:     ${bundle.model}`);
   if (bundle.modelBaseUrl) console.log(`  baseUrl:   ${bundle.modelBaseUrl}`);
+  console.log(`  egress:    ${bundle.proxyWhitelist?.join(', ') || '(deny all)'}`);
   const fileCount = Object.values(bundle.skills).reduce((n, files) => n + Object.keys(files).length, 0);
   console.log(`  skills:    ${Object.keys(bundle.skills).join(', ') || '(none)'} — ${fileCount} files, ${json.length} bytes as JSON`);
   for (const [skillName, files] of Object.entries(bundle.skills)) {
@@ -96,6 +97,8 @@ writeFileSync(
     instructions: backendAAgent.instructions,
     ...(backendAAgent.model ? { model: backendAAgent.model } : {}),
     ...(backendAAgent.modelBaseUrl ? { modelBaseUrl: backendAAgent.modelBaseUrl } : {}),
+    // Egress allow list for A's outbound handlers — deny-all when absent.
+    proxyWhitelist: backendAAgent.proxyWhitelist ?? [],
   }),
   'utf-8',
 );

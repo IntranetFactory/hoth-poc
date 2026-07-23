@@ -1,5 +1,10 @@
 {
-  "$schema": "../agent.schema.json"
+  "$schema": "../../core/agent.schema.json",
   // instructions come from INSTRUCTIONS.md in this folder; model falls back to
   // the backend's env-derived default (LLM_PROVIDER/LLM_MODEL).
+  // The only egress this agent needs: the planner skill's opening-times.js
+  // calls the (mock) Hoth Tourism API on this host — everything else is denied.
+  "proxy_whitelist": [
+    "postman-echo.com"
+  ]
 }

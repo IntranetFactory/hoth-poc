@@ -33,6 +33,8 @@ import {
   listCollectionRecords,
   readCollectionRecord,
   provisionAgentSkills,
+  putEgressWhitelist,
+  removeEgressWhitelist,
   resolveSandboxBinding,
   validateAgentBundle,
   STREAM_PROTOCOL_HEADERS,
@@ -121,6 +123,9 @@ app.post('/sessions/:id/agent', async (c) => {
   const bearer = `hoth-b-bearer-${id.slice(0, 8)}-${crypto.randomUUID()}`;
   await c.env.STORE.put(`agent:${id}`, JSON.stringify(bundle), { expirationTtl: BUNDLE_TTL_SECONDS });
   await kvSecretBroker(c.env.STORE).put(containerId, bearer, tenantTag);
+  // Per-agent egress policy: map the bundle's proxy_whitelist to this
+  // session's container. No proxy_whitelist in the agent -> [] -> deny all.
+  await putEgressWhitelist(c.env.STORE, containerId, bundle.proxyWhitelist ?? []);
 
   // Index the session so the data browser can enumerate conversations without
   // knowing ids upfront (best-effort — never fail provisioning over the index).
@@ -173,7 +178,11 @@ app.post('/sessions/:id/skill-check', async (c) => {
   const sandbox = getSandbox(namespace, id);
   let reconstructed = false;
   if (raw) {
-    reconstructed = (await provisionAgentSkills(sandbox, validateAgentBundle(raw))).reconstructed;
+    const bundle = validateAgentBundle(raw);
+    reconstructed = (await provisionAgentSkills(sandbox, bundle)).reconstructed;
+    // Mirror the initializer's whitelist self-heal so the check exercises the
+    // same egress policy a real turn would (deny-all stays deny-all: []).
+    await putEgressWhitelist(c.env.STORE, namespace.idFromName(id).toString(), bundle.proxyWhitelist ?? []);
   }
 
   const result = await sandbox.exec(command, { cwd: '/workspace' });
@@ -185,6 +194,7 @@ app.delete('/sessions/:id', async (c) => {
   if (!isValidSessionId(id)) return c.json({ error: 'invalid session id' }, 400);
   const containerId = c.env.Sandbox.idFromName(id).toString();
   await kvSecretBroker(c.env.STORE).remove(containerId);
+  await removeEgressWhitelist(c.env.STORE, containerId);
   await c.env.STORE.delete(`agent:${id}`);
   await removeSessionIndex(c.env.STORE, id).catch(() => {});
   return c.json({ ok: true });

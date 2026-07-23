@@ -10,6 +10,7 @@
  * values are strictly validated (site names, ISO dates), and are passed to the
  * skill script as `--flag=value` args, not spliced into shell syntax.
  */
+import { ECHO_HOST } from './config.js';
 import { SKILLS_DIR } from './provision.js';
 
 const SITE_RE = /^[A-Za-z0-9 ]{1,64}$/;
@@ -49,6 +50,13 @@ export function buildSkillCheckCommand(req) {
     case 'count-skill-files':
       // Clean-base / positive-control file count (plan §13). A *file* count.
       return `find '${SKILLS_DIR}' -type f 2>/dev/null | wc -l`;
+    case 'curl-check':
+      // Per-process TLS-trust proof: curl uses the OpenSSL default verify
+      // paths (NOT NODE_EXTRA_CA_CERTS), so this only succeeds when the
+      // baked CURL_CA_BUNDLE/SSL_CERT_FILE point curl at the interceptor CA.
+      // Prints the HTTP status the whitelisted echo host returned over 443.
+      // No interpolation — fully fixed string.
+      return `curl -sS -o /dev/null -w '%{http_code}' -m 20 -X POST 'https://${ECHO_HOST}/post?api=hoth-tourism&query=curl-check' 2>&1`;
     case 'semantius-whoami':
       // End-to-end egress proof: semantius reads the image-baked __sak__
       // placeholder and calls https://<org>.semantius.ai; the Worker's

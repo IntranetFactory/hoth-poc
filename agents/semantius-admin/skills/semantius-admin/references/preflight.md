@@ -1,0 +1,181 @@
+# Shared Preflight
+
+Single source of truth for the environment checks every Semantius skill runs before doing work. The `semantius-admin` orchestrator runs this once at the top of an orchestrated run; each sub-skill (`semantius-architect`, `semantius-analyst`, `semantius-modeler`) runs it when invoked **standalone**, and **skips** it when invoked **inline by the admin**.
+
+This file is referenced (never copied) by all four SKILLs. Fix a preflight rule here and every skill picks it up.
+
+---
+
+## When to run vs. skip
+
+Look at your input for a `Run context:` block (the admin states it in the conversation immediately before entering a sub-skill, see `semantius-admin/SKILL.md` Step 7.3):
+
+```
+Run context: run_id=run-...
+Customizations file: /abs/path/.../semantius/<org>/customizations.yaml
+...
+```
+
+- **Orchestrated (a `Run context:` block is present):** the admin has already run this preflight (CLI installed + authenticated, toolchain present, `adenin` guard passed, customizations path resolved). **Do NOT re-run the checks.** Read `Customizations file:` from the header and proceed. (Re-running is harmless but redundant; skip it.)
+- **Standalone (no `Run context:` block):** run all four checks below yourself, in order.
+
+The modeler never consults the customizations file (specs already carry every decision), so when the modeler runs this standalone it executes checks 1-3 and ignores the check-4 output. Bun is the tool the modeler critically needs (its deploy and sample-data scripts run with `bun run`).
+
+---
+
+## Output discipline
+
+- **Orchestrated by admin:** produce **no chat output** for these checks; the admin owns all narration and keeps the machinery invisible.
+- **Standalone:** keep it quiet too. The only user-facing output is a halt message (the active org is `adenin`, or a required tool could not be installed) or a setup action the user must see (installing a tool, or supplying their API key). A single brief line on the customizations file (check 4) is acceptable standalone. On all-pass with everything already installed and authenticated, say nothing.
+
+---
+
+## Check 1: Stay in the repo root
+
+Never `cd`. The `semantius` CLI reads `.env` from the current working directory, so changing into a sibling project loads a different `.env` with different credentials pointing at a different instance, and every subsequent call lands on the wrong tenant. Run every `semantius` command from the session's repo root, full stop. If verifying something requires a different directory's config, ask the user to run it and paste the output.
+
+---
+
+## Check 2: Install the supporting toolchain (Bun, jq, yq)
+
+Besides the `semantius` CLI, these skills need three general-purpose tools on PATH:
+
+- **Bun** — the mandated runtime. The modeler writes and runs its deploy and sample-data scripts with `bun run` (its only write path); the architect / analyst run `consistency-check.ts` with `bun`. Python is forbidden across these skills.
+- **jq** — parses `semantius` JSON output, both in this preflight (check 3 reads `org` and `ui_baseurl` with `jq`) and throughout the architect / analyst bash flows.
+- **yq** — Mike Farah's Go yq v4+, the engine behind the surgical `customizations.yaml` writes (admin Step 7 / `references/customizations-protocol.md`) that preserve hand-edits and provenance line-comments.
+
+Install any that are missing, no prompt, one plain line per tool actually installed (e.g. *"Installing jq..."*). **This check runs before check 3**, because the CLI probe there parses JSON with `jq`, so `jq` must already be on PATH. After installing, if the tool is still not found (`command -v <tool>` on POSIX, `Get-Command <tool>` on Windows PowerShell) the PATH update has not reached this shell: ask the user to open a new terminal and re-run.
+
+For each missing tool, prefer the platform's package manager; fall back to the project's static release binary when no package manager is present. Detect the platform and use the matching cell:
+
+| Tool | Windows | macOS | Linux | Static-binary fallback (no package manager) |
+|---|---|---|---|---|
+| **Bun** | `powershell -c "irm bun.sh/install.ps1 | iex"` | `curl -fsSL https://bun.sh/install | bash` | `curl -fsSL https://bun.sh/install | bash` | installer above is already a direct download — see https://bun.sh/install |
+| **jq** | `winget install -e --id jqlang.jq` (or `scoop install jq`, `choco install jq`) | `brew install jq` | `sudo apt-get install -y jq` / `sudo dnf install -y jq` / `sudo apk add jq` | download from https://github.com/jqlang/jq/releases/latest (`jq-windows-amd64.exe`, `jq-macos-arm64`/`-amd64`, `jq-linux-amd64`), `chmod +x`, place on PATH |
+| **yq** | `winget install -e --id MikeFarah.yq` (or `scoop install yq`, `choco install yq`) | `brew install yq` | `sudo snap install yq` or `brew install yq` (NOT `apt install yq` — see footgun below) | download `yq_<os>_<arch>` from https://github.com/mikefarah/yq/releases/latest (e.g. `yq_linux_amd64`, `yq_darwin_arm64`, `yq_windows_amd64.exe`), `chmod +x`, place on PATH |
+
+Reference flow (per tool: check, then install via the matching cell, then re-check). Use the block for the shell you are running in:
+
+**Linux / macOS (bash/zsh):**
+```bash
+for tool in bun jq yq; do
+  command -v "$tool" >/dev/null 2>&1 && continue
+  # install via the platform cell above (package manager first, static binary fallback),
+  # then re-check: command -v "$tool"  (if still missing, open a new terminal so PATH refreshes)
+done
+```
+
+**Windows (PowerShell):**
+```powershell
+foreach ($tool in 'bun','jq','yq') {
+  if (Get-Command $tool -ErrorAction SilentlyContinue) { continue }
+  # install via the Windows cell above (winget/scoop/choco first, static-binary fallback),
+  # then re-check: Get-Command $tool  (if still missing, open a new terminal so PATH refreshes)
+}
+```
+
+**yq footgun (Linux especially).** The distro package named `yq` is frequently the *Python* yq (kislyuk/yq), whose syntax is incompatible and would break every `yq -i` write the customizations layer makes. Whether yq was already present or just installed, verify the right build is the one on PATH:
+
+```bash
+yq --version    # must report the mikefarah build, e.g. "yq (https://github.com/mikefarah/yq/) version v4.x"
+```
+
+If `yq --version` shows anything else (the Python yq, or a version below v4), install Mike Farah's Go binary explicitly via the static-binary fallback above, place it on PATH ahead of the wrong one, and re-check. Do not proceed with a non-mikefarah yq.
+
+If any install fails, surface the verbatim error plus the tool's download page and stop. Do not limp on without a required tool — a missing `jq` silently breaks the org probe and the `adenin` guard in check 3, and a missing or wrong `yq` breaks every customizations write.
+
+---
+
+## Check 3: Ensure the `semantius` CLI is installed and authenticated, then halt if the active org is `adenin`
+
+This is the front door for every Semantius call, so it self-heals a missing binary and a missing/invalid `.env` instead of letting a raw CLI error surface later. One probe (`getCurrentUser`) folds the install check, the auth check, and the org/UI-base read into a single call. Probe once at the top of every invocation.
+
+### 3a. Is the CLI on PATH? Install it if not (no prompt)
+
+The `semantius` CLI ships as a **native installer, NOT an npm package**, so there is no base URL to ask for and no `npx` form. Detect the binary with the form matching your shell; if it is missing, run the matching install one-liner immediately (do not ask first), then have the user open a new terminal if PATH was just updated, and re-probe.
+
+| | Detect on PATH | Install if missing |
+|---|---|---|
+| **Linux / macOS** (bash/zsh) | `command -v semantius` | `curl -fsSL https://raw.githubusercontent.com/semantius/semantius-cli/main/install.sh \| bash` |
+| **Windows** (PowerShell) | `Get-Command semantius -ErrorAction SilentlyContinue` | `irm https://raw.githubusercontent.com/semantius/semantius-cli/main/install.ps1 \| iex` |
+
+POSIX reference (use the `Get-Command` / `irm` cells above on Windows PowerShell):
+
+```bash
+if ! command -v semantius >/dev/null 2>&1; then
+  : # run the matching install one-liner from the table, then re-check
+fi
+```
+
+This is one of the places check 3 may speak to the user: say at most one plain line, e.g. *"Installing the Semantius CLI..."*, run it, and re-check.
+
+**If auto-install is not possible** — the install command fails, or the client sandbox forbids running it — do NOT limp on. Direct the user to install it themselves and stop until they confirm:
+
+> "The Semantius CLI is required but I couldn't install it automatically. See **https://www.semantius.com/docs/cli/use-semantius/** for what it is and how to install it (Linux/macOS: `curl -fsSL …/install.sh | bash`; Windows PowerShell: `irm …/install.ps1 | iex`), then re-run."
+
+If detection still fails after a successful install, the PATH update has not reached this shell: ask the user to open a new terminal and re-run, then continue.
+
+### 3b. Probe once; this folds the auth check and reads org + UI base
+
+One probe, three values (exit status, `semantius_org`, `ui_baseurl`). Read the web UI base from the SAME `getCurrentUser` call so any close-out can build a clickable "Open in Semantius" link; remember it for the rest of the run (as you do the org) and reuse it. Never hardcode the org host: the UI host (e.g. `tests.semantius.app`) differs from the API host (`tests.semantius.ai`), and only `getCurrentUser` knows the right one. Use the block for your shell:
+
+**Linux / macOS (bash, parses with `jq`):**
+```bash
+me=$(semantius call crud getCurrentUser 2>&1) && rc=0 || rc=$?
+org=$(printf '%s' "$me" | jq -r .semantius_org 2>/dev/null)
+ui_baseurl=$(printf '%s' "$me" | jq -r .ui_baseurl 2>/dev/null)   # e.g. https://tests.semantius.app
+```
+
+**Windows (PowerShell, parses with `ConvertFrom-Json` — no jq needed):**
+```powershell
+# Pass '{}' explicitly. A bare no-argument `semantius call` reads its payload
+# from stdin; in a persistent PowerShell session that stdin pipe never reaches
+# EOF, so the call hangs forever with no error and no timeout (not a
+# network/auth problem — do not retry, add the explicit '{}' instead).
+$me = (semantius call crud getCurrentUser '{}' 2>&1 | Out-String); $rc = $LASTEXITCODE
+$obj = try { $me | ConvertFrom-Json } catch { $null }
+$org = $obj.semantius_org
+$ui_baseurl = $obj.ui_baseurl   # e.g. https://tests.semantius.app
+```
+
+**Parse the full `getCurrentUser` response — never pipe it through `head` / `tail` / `cut` before `jq`.** The blocks above capture the whole output into a variable and read `semantius_org` and `ui_baseurl` with independent `jq` / `ConvertFrom-Json` reads; do not truncate the JSON, or you silently drop `ui_baseurl` (a single-line response means even `head -1` is not safe to assume). Keep the capture-then-parse shape.
+
+If the probe fails (non-zero exit, or no `semantius_org` in the response), classify by the error and act. This mirrors the `use-it-ops-starter` bootstrap exit handling; never invent a connection or onboarding option beyond these:
+
+| Probe result | What you DO | What you SAY (shape) |
+|---|---|---|
+| `command not found` / `not recognized` / ENOENT (binary missing despite 3a) | The install in 3a did not take or PATH did not refresh. Re-run the install one-liner, then ask the user to restart the shell and re-run. | *"Installing the Semantius CLI..."* (then, if needed) *"Please restart your shell so the CLI is on PATH, then re-run."* |
+| Auth failure (401, expired token, missing or invalid `.env`) | Ask the user for their API key, write `SEMANTIUS_API_KEY=<key>` to the `.env` the CLI reads (repo root / cwd), then re-run the probe. Do NOT ask for a base URL or offer to provision anything. | *"I need your Semantius API key to connect. Generate one at https://app.semantius.com/dashboard (Settings > API Keys), paste it here, and I'll save it and continue."* |
+| JWT-audience error (`required audience not found, received [...]`) | Surface the error verbatim and wait; do not retry in a loop. | *(show the exact error, then)* *"This looks like a server-side auth-scope issue. Could you check the API key's audience?"* |
+
+Re-probe after the install or after saving the key; only continue once `getCurrentUser` returns a user object with `semantius_org`. Write the resolved `.env` with `SEMANTIUS_API_KEY=<key>` (append or update the line; preserve any other keys already in the file). All of this stays out of chat except the single install line or the API-key request above.
+
+**Read the key from `.env`; never carry it forward inline.** The CLI reads `SEMANTIUS_API_KEY` from `.env` on every call, so once it is saved you never pass it again — do **not** hardcode it or re-emit it in an inline `export SEMANTIUS_API_KEY=...` in a later command. Two reasons this matters: (1) a key pasted into chat can carry invisible corruption — most commonly a literal `…` (U+2026 horizontal ellipsis) or `...` where a console truncated a long token for display, plus stray whitespace or smart quotes — and the `getCurrentUser` probe above is exactly what catches that *before* any real work; carrying the raw pasted string into export statements bypasses the file the probe validated and re-introduces the bad value. (2) The `.env` file is the single source of truth, so any later script that needs the key should let the CLI read it (or read it from the file with `$(grep '^SEMANTIUS_API_KEY=' .env | cut -d= -f2-)`), never re-type it. If a probe ever fails with an auth error *after* a successful one, suspect a stale inline copy, not the saved `.env`.
+
+### 3c. Halt if `org` is `adenin`
+
+Once the probe succeeds, if `org` is `adenin`, stop immediately. Do not classify the request, do not inspect the workspace, do not dispatch any sub-skill. Tell the user: *"This workspace is pointed at the `adenin` instance. Switch workspace before continuing."* The check is purely operational — writes against `adenin` fail with permission errors that read like CLI bugs and waste debugging time; halting up front avoids the noise.
+
+---
+
+## Check 4: Compute the customizations file path
+
+(The modeler skips this; it does not consult the customizations file.) After the adenin halt passes, derive the per-org file location and export it for every downstream call. The folder name is the org; never duplicate the org inside the file body.
+
+```bash
+CUSTOMIZATIONS_FILE="semantius/${org}/customizations.yaml"
+mkdir -p "$(dirname "$CUSTOMIZATIONS_FILE")"
+export CUSTOMIZATIONS_FILE
+```
+
+If the file does not exist yet, that is fine: treat as "no policies set." The first widget answer creates it. (`yq`, used for the surgical writes to this file, is guaranteed by check 2.)
+
+---
+
+## Outputs
+
+After a successful preflight these values are resolved and reused for the rest of the run:
+
+- `org` — the active Semantius org (already confirmed not `adenin`).
+- `ui_baseurl` — the web UI base for building deep-links.
+- `CUSTOMIZATIONS_FILE` — per-org customizations path (unused by the modeler).

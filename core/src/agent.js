@@ -14,6 +14,7 @@
  * @property {string} instructions merged agent.jsonc instructions + INSTRUCTIONS.md
  * @property {string} [model]      normalized provider/model specifier
  * @property {string} [modelBaseUrl] OpenAI-compatible endpoint override
+ * @property {string[]} [proxyWhitelist] egress allow list (host globs); DENY-ALL when absent/empty
  * @property {Record<string, Record<string, string>>} skills skillName -> (rel-path -> utf-8 content)
  */
 
@@ -32,7 +33,32 @@ export const AGENT_LIMITS = {
   maxInstructionsBytes: 64 * 1024,
   maxAgentTotalBytes: 4 * 1024 * 1024,
   maxBaseUrlChars: 512,
+  maxWhitelistHosts: 32,
 };
+
+/** Exact host or `*.suffix` wildcard, lowercase (see isWhitelistedHost). */
+const WHITELIST_HOST_RE = /^(\*\.)?[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/;
+
+/**
+ * Validate a proxy_whitelist / proxyWhitelist value: an array of host globs.
+ * DENY-ALL SEMANTICS live at the egress seam — this only checks shape.
+ *
+ * @param {unknown} raw
+ * @param {string} label
+ * @returns {string[]}
+ */
+function validateWhitelist(raw, label) {
+  if (!Array.isArray(raw)) throw new BundleValidationError(`${label} must be an array of host globs`);
+  if (raw.length > AGENT_LIMITS.maxWhitelistHosts) {
+    throw new BundleValidationError(`${label}: too many hosts (${raw.length} > ${AGENT_LIMITS.maxWhitelistHosts})`);
+  }
+  for (const host of raw) {
+    if (typeof host !== 'string' || host.length === 0 || host.length > 255 || !WHITELIST_HOST_RE.test(host)) {
+      throw new BundleValidationError(`${label}: invalid host glob: ${String(host)} (exact host or *.suffix, lowercase)`);
+    }
+  }
+  return raw;
+}
 
 /**
  * Model prefix rule: a specifier whose first path segment is a known provider
@@ -60,7 +86,7 @@ export function validateAgentConfig(raw) {
     throw new BundleValidationError('agent.jsonc must be a JSON object');
   }
   const config = /** @type {Record<string, unknown>} */ (raw);
-  const allowed = ['$schema', 'instructions', 'model', 'model_base_url'];
+  const allowed = ['$schema', 'instructions', 'model', 'model_base_url', 'proxy_whitelist'];
   for (const key of Object.keys(config)) {
     if (!allowed.includes(key)) {
       throw new BundleValidationError(`agent.jsonc has unknown key: ${key} (allowed: ${allowed.join(', ')})`);
@@ -74,6 +100,9 @@ export function validateAgentConfig(raw) {
   }
   if (config.model_base_url !== undefined && (typeof config.model_base_url !== 'string' || !/^https?:\/\//.test(config.model_base_url))) {
     throw new BundleValidationError('agent.jsonc "model_base_url" must be an http(s) URL when present');
+  }
+  if (config.proxy_whitelist !== undefined) {
+    validateWhitelist(config.proxy_whitelist, 'agent.jsonc "proxy_whitelist"');
   }
   return config;
 }
@@ -144,6 +173,9 @@ export function validateAgentBundle(raw) {
     ) {
       throw new BundleValidationError('modelBaseUrl must be an http(s) URL');
     }
+  }
+  if (bundle.proxyWhitelist !== undefined) {
+    validateWhitelist(bundle.proxyWhitelist, 'proxyWhitelist');
   }
 
   const skills = bundle.skills;

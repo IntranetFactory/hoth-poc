@@ -89,6 +89,10 @@ try {
     'instructions merged from INSTRUCTIONS.md',
     bundle.instructions === readFileSync(join(agentDir, 'INSTRUCTIONS.md'), 'utf-8').trim(),
   );
+  check(
+    'proxy_whitelist carried into the bundle',
+    Array.isArray(bundle.proxyWhitelist) && bundle.proxyWhitelist.includes('postman-echo.com'),
+  );
 
   // 2. model prefix rule (decided): known provider as-is, else openrouter/
   check('normalize: unqualified gets openrouter/ prefix', normalizeModelSpecifier('deepseek/deepseek-v4-flash') === 'openrouter/deepseek/deepseek-v4-flash');
@@ -121,6 +125,9 @@ try {
     ['too many skills', (b) => ({ ...b, skills: Object.fromEntries(Array.from({ length: 17 }, (_, i) => [`s${i}`, { 'SKILL.md': 'x' }])) })],
     ['missing instructions', (b) => ({ ...b, instructions: '' })],
     ['bad modelBaseUrl', (b) => ({ ...b, modelBaseUrl: 'ftp://nope' })],
+    ['proxyWhitelist not an array', (b) => ({ ...b, proxyWhitelist: '*.semantius.ai' })],
+    ['proxyWhitelist bad glob', (b) => ({ ...b, proxyWhitelist: ['evil/*', 'ok.com'] })],
+    ['proxyWhitelist too many hosts', (b) => ({ ...b, proxyWhitelist: Array.from({ length: 33 }, (_, i) => `h${i}.com`) })],
   ]) {
     let rejected = false;
     try { validateAgentBundle(mutate(structuredClone(bundle))); } catch (err) { rejected = err instanceof BundleValidationError; }

@@ -24,7 +24,9 @@ if (!API_TOKEN) {
 const AUTH = { authorization: `Bearer ${API_TOKEN}` };
 
 const bundle = JSON.parse(readFileSync(join(here, '..', 'dist-bundle', 'hoth-trip-planner.agent.json'), 'utf-8'));
-const zeroSkillBundle = JSON.parse(readFileSync(join(here, '..', 'dist-bundle', 'semantius-admin.agent.json'), 'utf-8'));
+// Synthetic zero-skill agent (skills: {} is valid) — independent of what the
+// real agents/ folders currently contain.
+const zeroSkillBundle = { ...bundle, skills: {}, version: `${bundle.version.slice(0, 12)}zero` };
 const bundleFileCount = Object.values(bundle.skills).reduce((n, files) => n + Object.keys(files).length, 0);
 
 let failures = 0;
@@ -101,6 +103,23 @@ async function main() {
   const zCount = await post(B_URL, `/sessions/${zId}/skill-check`, { op: 'count-skill-files' });
   check('zero-skill', 'zero-skill session sandbox holds no skill files', Number((zCount.json.stdout ?? '').trim()) === 0, `count=${(zCount.json.stdout ?? '').trim()}`);
 
+  // --- Per-agent egress: an agent WITHOUT proxy_whitelist gets deny-all -----
+  // Same skills as the trip agent, but no whitelist: the opening-times call to
+  // the echo host must be rejected by the outbound handler (fail closed).
+  const { proxyWhitelist: _dropped, ...noEgressBase } = bundle;
+  const noEgress = { ...noEgressBase, version: `${bundle.version.slice(0, 12)}noeg` };
+  const dId = uuid();
+  const dIngest = await post(B_URL, `/sessions/${dId}/agent`, { bundle: noEgress, tenantTag: 'tenant-deny' });
+  check('egress', 'B ingests an agent without proxy_whitelist', dIngest.status === 200, `status ${dIngest.status}`);
+  const dRun = await post(B_URL, `/sessions/${dId}/skill-check`, FIXED);
+  const dOut = dRun.json.stdout ?? '';
+  check(
+    'egress',
+    'egress is deny-all for an agent without proxy_whitelist',
+    /403|egress denied/.test(dOut) || dRun.json.exitCode !== 0,
+    snippet(dOut),
+  );
+
   // --- C3: single source of truth (A image == bundle == B reconstructed) --
   // Leg 1 (A image) and clean-base(0) were checked at build time via docker;
   // here we compare the two LIVE sandboxes' hashes to the bundle values.
@@ -134,6 +153,17 @@ async function main() {
   check('C4', 'A opening-times.js runs (exit 0)', aRun.json.exitCode === 0);
   check('C4', 'B opening-times.js runs (exit 0)', bRun.json.exitCode === 0);
   check('C4', 'A stdout JSON == B stdout JSON (byte-for-byte)', aOut !== null && aOut === bOut, aOut ? `${aOut.length} chars` : 'unparseable');
+
+  // --- Per-process TLS trust: curl (system CA path, via the baked
+  //     CURL_CA_BUNDLE/SSL_CERT_FILE) reaches the whitelisted echo host over
+  //     HTTPS through the interceptor — a whitelisted host works from EVERY
+  //     tool, not just node ------------------------------------------------
+  const [aCurl, bCurl] = await Promise.all([
+    post(A_URL, `/sessions/${aId}/skill-check`, { op: 'curl-check' }),
+    post(B_URL, `/sessions/${bId}/skill-check`, { op: 'curl-check' }),
+  ]);
+  check('curl-tls', 'A: curl reaches whitelisted host over HTTPS (200)', (aCurl.json.stdout ?? '').trim() === '200', `got ${(aCurl.json.stdout ?? '').trim() || aCurl.json.stderr}`);
+  check('curl-tls', 'B: curl reaches whitelisted host over HTTPS (200)', (bCurl.json.stdout ?? '').trim() === '200', `got ${(bCurl.json.stdout ?? '').trim() || bCurl.json.stderr}`);
 
   // --- C4 egress trace: the echo upstream saw this session's bearer, the
   //     container sent none ------------------------------------------------
@@ -188,7 +218,7 @@ async function main() {
   }
 
   // Cleanup best-effort
-  await Promise.all([del(A_URL, aId), del(B_URL, bId), del(B_URL, b2Id), del(B_URL, zId), del(B_URL, orphanId)]);
+  await Promise.all([del(A_URL, aId), del(B_URL, bId), del(B_URL, b2Id), del(B_URL, zId), del(B_URL, dId), del(B_URL, orphanId)]);
 
   console.log(`\n${failures === 0 ? 'ALL ACCEPTANCE CHECKS PASS' : `${failures} FAILURE(S)`}  (${results.length} checks)`);
   process.exit(failures === 0 ? 0 : 1);

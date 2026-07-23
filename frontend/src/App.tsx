@@ -39,6 +39,7 @@ type AgentBundle = {
   instructions: string;
   model?: string;
   modelBaseUrl?: string;
+  proxyWhitelist?: string[];
   skills: Record<string, Record<string, string>>;
 };
 
@@ -959,6 +960,10 @@ function BundleView({ bundle }: { bundle: AgentBundle }) {
         <div className="meta-row">
           <dt>instructions</dt>
           <dd>{bundle.instructions}</dd>
+        </div>
+        <div className="meta-row">
+          <dt>egress</dt>
+          <dd>{bundle.proxyWhitelist?.length ? bundle.proxyWhitelist.join(', ') : '(deny all)'}</dd>
         </div>
         <div className="meta-row">
           <dt>skills</dt>

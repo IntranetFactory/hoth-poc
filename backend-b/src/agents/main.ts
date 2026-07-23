@@ -33,7 +33,13 @@ import {
   useTool,
 } from '@flue/runtime';
 import { cloudflareSandbox } from '@flue/runtime/cloudflare';
-import { kvSecretBroker, provisionAgentSkills, resolveSandboxBinding, validateAgentBundle } from '@hoth/core';
+import {
+  kvSecretBroker,
+  provisionAgentSkills,
+  putEgressWhitelist,
+  resolveSandboxBinding,
+  validateAgentBundle,
+} from '@hoth/core';
 import { commentOnIssue, gitHubRefFromConversation } from '../channels/github';
 import { agentModelSpecifier } from '../llm';
 
@@ -133,13 +139,19 @@ export function Main({ id }: AgentProps) {
       });
     }
     const ns = (env as unknown as Record<string, DurableObjectNamespace>)[binding];
+    const containerId = ns.idFromName(id).toString();
 
     // Absent→write self-heal: no-op on a warm container, reconstructs after
     // sleep/eviction reset the disk. Zero-skill agents provision nothing.
     await provisionAgentSkills(getSandbox(ns, id), bundle);
 
+    // Egress-whitelist self-heal: re-map the bundle's proxy_whitelist for this
+    // container (covers channel conversations that never pass ingest, and
+    // expired TTLs on long-lived sessions). Deleted sessions never reach here
+    // — their bundle is gone, so the early return above keeps them deny-all.
+    await putEgressWhitelist(STORE, containerId, bundle.proxyWhitelist ?? []);
+
     if (bearerTag) {
-      const containerId = ns.idFromName(id).toString();
       const broker = kvSecretBroker(STORE);
       if (!(await broker.resolve(containerId))) {
         await broker.put(containerId, `hoth-b-bearer-${bearerTag}-${crypto.randomUUID()}`, bearerTag);

@@ -17,6 +17,7 @@
 
 export const BEARER_KEY_PREFIX = 'bearer:';
 export const TAG_KEY_PREFIX = 'tag:';
+export const WHITELIST_KEY_PREFIX = 'whitelist:';
 export const DEFAULT_SECRET_TTL_SECONDS = 24 * 60 * 60;
 
 function jsonResponse(status, body) {
@@ -44,9 +45,53 @@ function hostMatchesPattern(host, pattern) {
   return false;
 }
 
-/** True when `host` matches any glob in `whitelist` (see DOMAIN_WHITELIST). */
+/** True when `host` matches any glob in `whitelist` (an agent's proxyWhitelist). */
 export function isWhitelistedHost(host, whitelist) {
   return whitelist.some((pattern) => hostMatchesPattern(host, pattern));
+}
+
+// ---------------------------------------------------------------------------
+// Per-container egress whitelist store. The whitelist is PER AGENT
+// (agent.jsonc `proxy_whitelist`), delivered in the agent bundle and mapped to
+// the session's containerId so the isolate-global outbound handlers can
+// resolve it per invocation — same pattern, same KV namespace, and same
+// fail-closed posture as the bearer mapping: NO MAPPING (or an empty list)
+// MEANS DENY ALL EGRESS. Backend A skips this store — its single fixed agent's
+// list is baked at build time.
+// ---------------------------------------------------------------------------
+
+/**
+ * @param {{ put(k: string, v: string, o?: object): Promise<void> }} kv
+ * @param {string} containerId
+ * @param {string[]} hosts the agent's proxyWhitelist ([] = deny all)
+ * @param {number} [ttlSeconds]
+ */
+export async function putEgressWhitelist(kv, containerId, hosts, ttlSeconds = DEFAULT_SECRET_TTL_SECONDS) {
+  await kv.put(WHITELIST_KEY_PREFIX + containerId, JSON.stringify(hosts), { expirationTtl: ttlSeconds });
+}
+
+/**
+ * @param {{ get(k: string): Promise<string | null> }} kv
+ * @param {string} containerId
+ * @returns {Promise<string[] | null>} null when no mapping exists (deny all)
+ */
+export async function resolveEgressWhitelist(kv, containerId) {
+  const raw = await kv.get(WHITELIST_KEY_PREFIX + containerId);
+  if (!raw) return null; // fail closed
+  try {
+    const hosts = JSON.parse(raw);
+    return Array.isArray(hosts) ? hosts.filter((h) => typeof h === 'string') : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * @param {{ delete(k: string): Promise<void> }} kv
+ * @param {string} containerId
+ */
+export async function removeEgressWhitelist(kv, containerId) {
+  await kv.delete(WHITELIST_KEY_PREFIX + containerId);
 }
 
 /**

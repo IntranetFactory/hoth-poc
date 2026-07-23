@@ -21,12 +21,13 @@
 // No imports: this file must run as both CommonJS (bare container /workspace)
 // and ESM (repo checkouts with "type": "module"), on plain `node`.
 
-// HTTP (not HTTPS) to the echo host: the Cloudflare Sandbox egress proxy
-// injects the per-tenant bearer on port 80 in this environment. HTTPS
-// interception needs the CA-provisioning base image (recorded caveat); the
-// zero-trust property — secret injected at the proxy, never in the sandbox —
-// is identical on either port. Override with HOTH_API_URL.
-const API_URL = process.env.HOTH_API_URL || 'http://postman-echo.com/post?api=hoth-tourism&query=opening-times';
+// HTTPS to the echo host: the Cloudflare Sandbox egress proxy MITMs port 443
+// (interceptHttps) and injects the per-tenant bearer. Node trusts the
+// interceptor CA via NODE_EXTRA_CA_CERTS (baked into the image), so the
+// handshake validates — unlike system-CA-store tools such as curl.
+// Override with HOTH_API_URL (the offline smoke test points this at a local
+// plain-HTTP echo server).
+const API_URL = process.env.HOTH_API_URL || 'https://postman-echo.com/post?api=hoth-tourism&query=opening-times';
 
 function parseArgs(argv) {
   const args = { debugEcho: false };

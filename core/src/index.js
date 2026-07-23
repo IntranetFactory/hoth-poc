@@ -33,13 +33,17 @@ export {
   listCollectionRecords,
   readCollectionRecord,
 } from './admin.js';
-export { ECHO_HOST, SEMANTIUS_KEY_SENTINEL, DOMAIN_WHITELIST, DEFAULT_LLM, configureLlm, SESSION_ID_RE, isValidSessionId, STREAM_PROTOCOL_HEADERS } from './config.js';
+export { ECHO_HOST, SEMANTIUS_KEY_SENTINEL, DEFAULT_LLM, configureLlm, SESSION_ID_RE, isValidSessionId, STREAM_PROTOCOL_HEADERS } from './config.js';
 export {
   kvSecretBroker,
   injectAndForward,
   brokerEgress,
   isWhitelistedHost,
+  putEgressWhitelist,
+  resolveEgressWhitelist,
+  removeEgressWhitelist,
   BEARER_KEY_PREFIX,
   TAG_KEY_PREFIX,
+  WHITELIST_KEY_PREFIX,
   DEFAULT_SECRET_TTL_SECONDS,
 } from './egress.js';

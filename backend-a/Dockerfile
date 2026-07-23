@@ -34,13 +34,14 @@ RUN curl -fsSL "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/
 ENV SEMANTIUS_API_KEY=__sak__ \
     SEMANTIUS_ORG=tests
 
-# Trust the Cloudflare Containers egress-interception CA so semantius's HTTPS
-# calls to <org>.semantius.ai succeed when interceptHttps is on. The sandbox
-# runtime provisions the real cert at this exact path; semantius (a Bun binary)
-# trusts it additively via NODE_EXTRA_CA_CERTS (verified: the binary reads this
-# env). Not pre-created here — the runtime owns the file, and an empty stub could
-# shadow the real cert. In plain (non-intercepted) runs the file is simply
-# absent and semantius falls back to the system CA store.
+# Interceptor-CA trust is handled OOTB by the in-container sandbox runtime
+# (verified by inspecting /container-server/sandbox in this image): at boot
+# with interception enabled it sets NODE_EXTRA_CA_CERTS to the provisioned CA
+# and merges the CA into the system bundle, pointing SSL_CERT_FILE /
+# CURL_CA_BUNDLE / REQUESTS_CA_BUNDLE / GIT_SSL_CAINFO at the merged bundle —
+# every exec'd process (node, bun/semantius, curl, python, git) inherits
+# working trust. This baked value is a belt-and-braces default only; the
+# runtime overwrites it in the environment children actually see.
 ENV NODE_EXTRA_CA_CERTS=/etc/cloudflare/certs/cloudflare-containers-ca.crt
 
 # The whole point of backend A: skill delivery via image, no runtime writes.

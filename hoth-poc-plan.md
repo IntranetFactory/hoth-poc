@@ -47,7 +47,7 @@ Flue core (host-agnostic):  bundle → provision skill → discovery → run →
 c:\dev\hoth-poc\                      pnpm workspace; conventional package names
 ├─ agents/      SOURCE OF TRUTH for every agent: agents/<name>/{agent.jsonc (REQUIRED),
 │               INSTRUCTIONS.md (optional, appended), skills/<skill>/…}. Schema:
-│               agents/agent.schema.json. Folders without agent.jsonc are skipped.
+│               core/agent.schema.json. Folders without agent.jsonc are skipped.
 ├─ backend-a/   Flue+CF Worker — the FIXED hoth-trip-planner agent; skills BAKED INTO the
 │               container image (hard-coded / OOTB).
 ├─ backend-b/   Flue+CF Worker — MULTI-AGENT: the whole agent (instructions + model +
@@ -65,9 +65,9 @@ c:\dev\hoth-poc\                      pnpm workspace; conventional package names
 
 Each agent is one folder under `agents/`. `agent.jsonc` is REQUIRED (JSONC — comments and
 trailing commas allowed; parsed by `jsonc-parser` in `@hoth/core/node`); a folder without it
-is skipped by the bundler with a warning. Properties (schema `agents/agent.schema.json`,
-unknown keys rejected — future keys like an egress allow list are added to schema +
-`validateAgentConfig` together):
+is skipped by the bundler with a warning. Properties (schema `core/agent.schema.json` —
+kept OUT of agents/ so the folder holds only agents; unknown keys rejected — future keys
+are added to schema + `validateAgentConfig` together):
 
 - `instructions` — optional string; an optional `INSTRUCTIONS.md` next to the config is
   **appended**; at least one of the two must yield non-empty text.
@@ -75,6 +75,10 @@ unknown keys rejected — future keys like an egress allow list are added to sch
   as-is, else `openrouter/` is prepended. Missing → the backend's env default (§ LLM).
 - `model_base_url` — optional http(s) URL; per-agent transport override (auth stays the
   worker-wide `LLM_API_KEY`).
+- `proxy_whitelist` — optional array of egress host globs (exact host or `*.suffix`
+  subdomain wildcard, ≤32 entries). **DENY-ALL WHEN ABSENT**: an agent without it can make
+  no outbound request from its sandbox at all (§7). There is no global whitelist anymore —
+  the former `DOMAIN_WHITELIST` constant is gone.
 
 Skills live in `agents/<name>/skills/<skill>/` (0..16; each needs a `SKILL.md` whose
 frontmatter `name` matches the skill dir name). `hoth-trip-planner` has one skill,
@@ -116,6 +120,7 @@ instructions, optional model overrides, and every file of every skill:
   "instructions":"…agent.jsonc instructions + INSTRUCTIONS.md…",
   "model":"openrouter/…",            // optional, pre-normalized (prefix rule, §3)
   "modelBaseUrl":"https://…",        // optional
+  "proxyWhitelist":["postman-echo.com"],  // optional — DENY-ALL egress when absent (§7)
   "skills": { "planner": { "SKILL.md":"…", "references/echo-basin.md":"…",
                            "references/north-ridge.md":"…", "scripts/opening-times.js":"…" } } }
 ```
@@ -211,6 +216,14 @@ agent reached the container: image-baked + build-time meta (A) vs runtime-recons
   silent miss. B writes the mapping in the ingest POST; A in its provision step. The frontend awaits 2xx
   before chatting (§10) so the mapping exists first.
 - **TTL + delete-on-session-end** on `KV[containerId]` — defence-in-depth even though ids are unique.
+- **Per-agent egress whitelist (dynamic):** the agent's `proxy_whitelist` (§3) rides the bundle as
+  `proxyWhitelist` and gates BOTH handlers. Backend B maps `whitelist:<containerId>` in KV at ingest
+  (self-healed in the initializer and the skill-check route — deleted sessions stay deny-all because
+  their bundle is gone); each handler resolves it per invocation via `resolveEgressWhitelist` — **no
+  mapping / empty list ⇒ deny all** (same fail-closed posture as the bearer). Backend A is the fixed
+  single-agent backend, so its list is baked at build time from the generated meta into
+  `cloudflare.ts`. The old global `DOMAIN_WHITELIST` is removed; `brokerEgress` takes the resolved
+  per-agent list.
 - `interceptHttps` is **default `true`** (echo host is HTTPS) — no opt-in needed.
 - **Egress deny-by-default:** set **`enableInternet: false`** **and** **`allowedHosts = [echo host]`**
   (an allowlist becomes deny-by-default). `enableInternet:false` leaves only ports 80/443/DNS open and
@@ -221,17 +234,27 @@ agent reached the container: image-baked + build-time meta (A) vs runtime-recons
 - **Two wiring prerequisites found during implementation (both load-bearing):**
   1. **Workers AI binding** (`"ai": { "binding": "AI" }` in `wrangler.jsonc`) is required for any
      `cloudflare/*` model, else the agent fails with *"Cloudflare AI binding not available."*
-  2. **HTTPS interception CA not provisioned by the `cloudflare/sandbox:0.12.3` base image.** With
-     `enableInternet:false` + `allowedHosts`, the egress proxy engages on **port 80** (injection works,
-     verified) but **port 443 hangs** — `/etc/cloudflare/certs/` is absent, so the container's TLS
-     client can't validate the interceptor. **POC egresses to the echo host over HTTP**; the zero-trust
-     property (secret injected at the proxy, never in the sandbox) is identical on either port. Getting
-     HTTPS interception needs a newer sandbox base image that ships the CA-trust bootstrap — recorded
-     residual item, not a thesis blocker.
-- **Egress deny-by-default measured:** non-allowlisted hosts return **no successful response** — port
-  443 hard-blocks (curl `000`) for link-local `169.254.169.254`, RFC-1918, and arbitrary public hosts;
-  port 80 denials return **`520`** from the proxy (request refused upstream, no data served) rather than
-  a TCP-level block. No unauthorized egress succeeds; the `000`-vs-`520` split is a proxy-layer nuance.
+  2. **HTTPS interception needs per-process CA trust — SUPERSEDED finding, kept for history.** The
+     original spike (pre-`interceptHttps`, `allowedHosts` era) measured **port 443 hanging** and read
+     it as "CA not provisioned by the base image". The semantius work corrected this: with
+     `interceptHttps = true` the sandbox runtime DOES provision the interceptor CA at
+     `/etc/cloudflare/certs/cloudflare-containers-ca.crt`, and HTTPS egress works for processes that
+     trust it — semantius and node scripts do via `NODE_EXTRA_CA_CERTS` (both Dockerfiles set it);
+     verified by the live semantius CLI calls to `<org>.semantius.ai`. CLOSED — handled OOTB by the
+     platform: the in-container sandbox runtime (`/container-server/sandbox`, inspected in the
+     `0.12.3` image) sets `NODE_EXTRA_CA_CERTS` at boot and merges the interceptor CA into the
+     system bundle, exporting `SSL_CERT_FILE` / `CURL_CA_BUNDLE` / `REQUESTS_CA_BUNDLE` /
+     `GIT_SSL_CAINFO` to every exec'd process — node, bun/semantius, curl, python, and git all get
+     working trust with no per-image wiring (proved by the `curl-check` skill-check op in
+     acceptance). The spike-era hang happened because interception was off: no CA existed at all.
+     `opening-times.js` calls the echo host over HTTPS.
+- **Egress deny-by-default measured (HISTORICAL — spike-era config):** non-allowlisted hosts returned
+  **no successful response** — port 443 hard-blocked (curl `000`) for link-local `169.254.169.254`,
+  RFC-1918, and arbitrary public hosts; port 80 denials returned **`520`** from the proxy. Measured
+  BEFORE the catch-all `outbound` handler and `interceptHttps` existed: today all outbound HTTP(S) is
+  intercepted and denials for CA-trusting processes come from the handlers as **403** per the agent's
+  proxy_whitelist (curl-style tools still die in the 443 handshake). The invariant that mattered —
+  no unauthorized egress succeeds — holds in both eras.
 - The **echo endpoint** reflects the request back so the POC can *see* the injected bearer and confirm
   the container sent none. (beeceptor `http-echo` / `httpbin.org/anything`; must echo request headers;
   avoid HEAD — sandbox-sdk#660.)
