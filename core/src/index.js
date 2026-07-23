@@ -17,6 +17,7 @@ export {
 } from './agent.js';
 export { makeTar, makeTarGz, toBase64 } from './tar.js';
 export { provisionAgentSkills, SKILLS_DIR } from './provision.js';
+export { parseSkillFrontmatter, skillCatalogFromBundle, SKILL_DESCRIPTION_MAX } from './skill-catalog.js';
 export { buildSkillCheckCommand, SkillCheckError } from './skill-check.js';
 export { apiKeyGuard } from './auth.js';
 export {

@@ -13,7 +13,7 @@
  */
 import { getSandbox } from '@cloudflare/sandbox';
 import { env } from 'cloudflare:workers';
-import { type AgentProps, useModel, useSandbox } from '@flue/runtime';
+import { type AgentProps, useModel, useResponseFinish, useSandbox } from '@flue/runtime';
 import { cloudflareSandbox } from '@flue/runtime/cloudflare';
 import agent from '../generated/agent.json';
 import { agentModelSpecifier } from '../llm';
@@ -23,7 +23,16 @@ type Env = {
 };
 
 export function Hoth({ id }: AgentProps) {
-  useModel(agentModelSpecifier(agent));
+  const specifier = agentModelSpecifier(agent);
+  useModel(specifier);
+  // Same restore as backend B's main.ts: flue v2's conversation read no
+  // longer projects usage, so attach it as response metadata. Catalog-known
+  // model overrides keep an openrouter/ specifier (llm.ts resolves them
+  // against the Pi catalog), so this gate covers them; only agent-<name>
+  // placeholder/custom providers carry zero rates and attach nothing.
+  if (specifier.startsWith('openrouter/')) {
+    useResponseFinish(({ response }) => ({ usage: response.usage, model: specifier }));
+  }
   const { Sandbox } = env as unknown as Env;
   useSandbox(cloudflareSandbox(getSandbox(Sandbox, id)), { cwd: '/workspace' });
   return agent.instructions;

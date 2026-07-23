@@ -29,7 +29,9 @@ import {
   useInitialData,
   useModel,
   usePersistentState,
+  useResponseFinish,
   useSandbox,
+  useSkill,
   useTool,
 } from '@flue/runtime';
 import { cloudflareSandbox } from '@flue/runtime/cloudflare';
@@ -38,6 +40,8 @@ import {
   provisionAgentSkills,
   putEgressWhitelist,
   resolveSandboxBinding,
+  skillCatalogFromBundle,
+  SKILLS_DIR,
   validateAgentBundle,
 } from '@hoth/core';
 import { commentOnIssue, gitHubRefFromConversation } from '../channels/github';
@@ -74,7 +78,18 @@ type AgentMeta = {
   model?: string;
   modelBaseUrl?: string;
   binding: string;
+  /**
+   * Explicit skill catalog (name + SKILL.md description) mounted via
+   * useSkill() every render. The files are ALSO provisioned on disk for
+   * execution, but the model-visible catalog must not depend on Flue's
+   * init-time workspace discovery observing the sandbox filesystem — on B it
+   * measurably does not (provisioned sessions composed system prompts with an
+   * empty catalog; see README "Skill delivery to the model").
+   */
+  skillCatalog?: SkillCatalogEntry[];
 };
+
+type SkillCatalogEntry = { name: string; description: string };
 
 /** The creating send's `initialData` — bundle meta with baseImage, no files. */
 type AgentSeed = Omit<AgentMeta, 'binding'> & { baseImage?: string };
@@ -89,12 +104,22 @@ function metaFromSeed(seed: AgentSeed | undefined): AgentMeta | null {
     // Unknown baseImage in a hand-crafted seed: fall back to the default
     // binding instead of failing every render of this conversation forever.
   }
+  // The seed is untrusted: keep only well-shaped catalog entries so a
+  // hand-crafted seed cannot crash the render inside useSkill().
+  const skillCatalog = Array.isArray(seed.skillCatalog)
+    ? seed.skillCatalog.filter(
+        (s): s is SkillCatalogEntry =>
+          !!s && typeof s.name === 'string' && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(s.name) &&
+          typeof s.description === 'string' && s.description.length > 0 && s.description.length <= 1024,
+      )
+    : undefined;
   return {
     agentName: String(seed.agentName ?? 'unknown'),
     version: String(seed.version ?? ''),
     instructions: seed.instructions,
     ...(typeof seed.model === 'string' ? { model: seed.model } : {}),
     ...(typeof seed.modelBaseUrl === 'string' ? { modelBaseUrl: seed.modelBaseUrl } : {}),
+    ...(skillCatalog && skillCatalog.length > 0 ? { skillCatalog } : {}),
     binding,
   };
 }
@@ -119,22 +144,62 @@ export function Main({ id }: AgentProps) {
   const seed = useInitialData<AgentSeed | undefined>();
   const [meta, setMeta] = usePersistentState<AgentMeta | null>('agentMeta', null);
   const active = meta ?? metaFromSeed(seed);
-  useModel(agentModelSpecifier(active));
+  const specifier = agentModelSpecifier(active);
+  useModel(specifier);
+
+  // Flue v2 dropped per-message usage/model from the conversation read
+  // projection (beta attached metadata.usage to every assistant message);
+  // response metadata is the v2 seam that reaches clients and the data
+  // browser's Raw JSON. Catalog-known model overrides keep an openrouter/
+  // specifier (llm.ts resolves them against the Pi catalog with real
+  // per-token rates), so this gate covers them; only the agent-<name>
+  // placeholder/custom providers register zero rates — $0 would read as
+  // "free", so those attach nothing. The cost is pi-ai's catalog-rate
+  // computation, not OpenRouter's billed amount (OpenRouter now returns
+  // actual cost inline in usage.cost, but pi-ai discards it and prices
+  // tokens from its model catalog).
+  if (specifier.startsWith('openrouter/')) {
+    useResponseFinish(({ response }) => ({ usage: response.usage, model: specifier }));
+  }
   const namespace = (env as unknown as Record<string, DurableObjectNamespace>)[active?.binding ?? 'Sandbox'];
   useSandbox(cloudflareSandbox(getSandbox(namespace, id)), { cwd: '/workspace' });
+
+  // Explicit catalog mounting — the second leg of skill delivery (see
+  // AgentMeta.skillCatalog). The definition's instructions POINT AT the
+  // on-disk SKILL.md rather than inlining it: the per-message self-heal in
+  // useAgentStart guarantees the files exist by the time tools run, keeps
+  // this state small, and keeps every relative reference inside the skill
+  // resolvable from a real directory. When workspace discovery ALSO finds
+  // the disk copy, the discovered skill wins the name merge — same content.
+  for (const skill of active?.skillCatalog ?? []) {
+    useSkill({
+      name: skill.name,
+      description: skill.description,
+      instructions:
+        `This skill's full instructions are provisioned on disk. ` +
+        `Read ${SKILLS_DIR}/${skill.name}/SKILL.md now and follow it exactly; ` +
+        `resolve its relative references against ${SKILLS_DIR}/${skill.name}/.`,
+    });
+  }
 
   useAgentStart(async () => {
     const raw = await STORE.get(bundleKey);
     if (!raw) return;
     const bundle = validateAgentBundle(raw);
     const binding = resolveSandboxBinding(bundle.baseImage);
-    if (meta?.version !== bundle.version || meta?.binding !== binding) {
+    const skillCatalog = skillCatalogFromBundle(bundle);
+    // The catalog leg migrates sessions whose meta predates the explicit
+    // catalog field (bundle version unchanged); zero-skill agents must not
+    // re-trigger it every message, hence the length gate.
+    const catalogMissing = meta?.skillCatalog === undefined && skillCatalog.length > 0;
+    if (meta?.version !== bundle.version || meta?.binding !== binding || catalogMissing) {
       setMeta({
         agentName: bundle.agentName,
         version: bundle.version,
         instructions: bundle.instructions,
         ...(bundle.model ? { model: bundle.model } : {}),
         ...(bundle.modelBaseUrl ? { modelBaseUrl: bundle.modelBaseUrl } : {}),
+        ...(skillCatalog.length > 0 ? { skillCatalog } : {}),
         binding,
       });
     }

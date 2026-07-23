@@ -55,9 +55,6 @@ export function AgentChat({ client }: { client: FlueClient }) {
   const agent = useFlueAgent({ client, live: 'sse' });
 
   const chatStatus = toChatStatus(agent.status);
-  // 'submitted' and 'streaming' both mean "generating". flue exposes no cancel,
-  // so we never show PromptInputSubmit's default stop-square (it would imply a
-  // click-to-cancel that does nothing) — a spinner honestly signals both.
   const busy = chatStatus === 'submitted' || chatStatus === 'streaming';
 
   function handleSubmit(message: PromptInputMessage) {
@@ -65,6 +62,12 @@ export function AgentChat({ client }: { client: FlueClient }) {
     if (!text) return;
     setInput('');
     void agent.sendMessage(text);
+  }
+
+  function handleStop() {
+    // abort() resolves once the intent is recorded; the run settles to
+    // 'aborted' asynchronously and status resets via the live stream.
+    void client.abort().catch((error) => console.error('abort failed', error));
   }
 
   return (
@@ -104,15 +107,15 @@ export function AgentChat({ client }: { client: FlueClient }) {
             </PromptInputBody>
             <PromptInputFooter>
               {/* No status text — the submit icon reflects agent.status via
-                  toChatStatus: ready ↵ / generating ⟳ (spinner) / error ✕. */}
+                  toChatStatus: ready ↵ / submitted ⟳ / streaming ⏹ / error ✕.
+                  While generating the button is enabled and onStop wires the
+                  click to client.abort() (kills the run and any queued work). */}
               <PromptInputSubmit
                 status={chatStatus}
-                disabled={!input.trim()}
+                disabled={!busy && !input.trim()}
+                onStop={handleStop}
                 className="ml-auto"
-                {...(busy ? { 'aria-label': 'Generating' } : {})}
-              >
-                {busy ? <Spinner /> : undefined}
-              </PromptInputSubmit>
+              />
             </PromptInputFooter>
           </PromptInput>
         </div>

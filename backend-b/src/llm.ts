@@ -72,13 +72,24 @@ export type AgentLlm = { agentName: string; model?: string; modelBaseUrl?: strin
 
 /**
  * Per-agent model resolution. No overrides -> the env-derived default.
- * Any override -> register a dedicated one-model provider `agent-<name>`
- * (unique id per agent, so concurrent agents in one isolate never clobber
- * each other; setProvider replaces same-id registrations, so re-registering
- * on every render is idempotent) and return `agent-<name>/<modelId>`. A
- * dedicated catalog entry also avoids Pi catalog misses for models the
- * built-in openrouter catalog doesn't know. Auth stays the worker-wide
- * LLM_API_KEY secret — model_base_url overrides transport only.
+ * Overrides resolve metadata-preservingly — Flue trusts catalog metadata
+ * blindly (`reasoning` gates thinking, `contextWindow` sets the compaction
+ * threshold, `maxTokens` caps output, cost rates price usage), so a
+ * synthesized entry silently degrades a capable model:
+ *  1. openrouter model known to Pi's catalog, stock endpoint -> return the
+ *     specifier unchanged; it resolves against the `openrouter` provider
+ *     (re-registered by configureLlm with the LLM_API_KEY secret) and keeps
+ *     the full catalog entry.
+ *  2. catalog-known model + model_base_url -> dedicated one-model provider
+ *     `agent-<name>` reusing the catalog entry, only the transport swapped.
+ *  3. catalog miss (custom endpoints, models newer than the catalog) ->
+ *     dedicated provider with a conservative placeholder entry (no
+ *     reasoning, 128k window, 8k output) — the only degrading path.
+ * The `agent-<name>` id is unique per agent so concurrent agents in one
+ * isolate never clobber each other; setProvider replaces same-id
+ * registrations, so re-registering on every render is idempotent. Auth
+ * stays the worker-wide LLM_API_KEY secret — model_base_url overrides
+ * transport only.
  */
 export function agentModelSpecifier(agent?: AgentLlm | null): string {
   if (!agent || (!agent.model && !agent.modelBaseUrl)) return MODEL_SPECIFIER;
@@ -88,6 +99,14 @@ export function agentModelSpecifier(agent?: AgentLlm | null): string {
   const upstreamProvider = spec.slice(0, slash);
   const modelId = spec.slice(slash + 1);
   if (upstreamProvider === 'cloudflare') return spec; // AI binding; no base-url override
+
+  const catalogEntry =
+    upstreamProvider === 'openrouter'
+      ? openrouterProvider()
+          .getModels()
+          .find((model) => model.id === modelId)
+      : undefined;
+  if (catalogEntry && !agent.modelBaseUrl) return spec;
 
   const id = `agent-${agent.agentName}`;
   const auth = {
@@ -101,18 +120,20 @@ export function agentModelSpecifier(agent?: AgentLlm | null): string {
       id,
       auth,
       models: [
-        {
-          id: modelId,
-          name: modelId,
-          api: 'openai-completions',
-          provider: id,
-          baseUrl: agent.modelBaseUrl ?? vars.LLM_BASE_URL ?? PROVIDER_BASE_URLS[upstreamProvider] ?? '',
-          reasoning: false,
-          input: ['text'],
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-          contextWindow: 128000,
-          maxTokens: 8192,
-        },
+        catalogEntry
+          ? { ...catalogEntry, provider: id, baseUrl: agent.modelBaseUrl ?? catalogEntry.baseUrl }
+          : {
+              id: modelId,
+              name: modelId,
+              api: 'openai-completions',
+              provider: id,
+              baseUrl: agent.modelBaseUrl ?? vars.LLM_BASE_URL ?? PROVIDER_BASE_URLS[upstreamProvider] ?? '',
+              reasoning: false,
+              input: ['text'],
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+              contextWindow: 128000,
+              maxTokens: 8192,
+            },
       ],
       api: openAICompletionsApi(),
     }),

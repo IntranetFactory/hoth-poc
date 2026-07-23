@@ -72,8 +72,40 @@ GitHub-channel seed), `frontend/src/generated/agents/<name>.json` (glob-imported
 a NEW agents/ folder shows up in the frontend agent dropdown after re-running `pnpm bundle`,
 no code change), and `backend-a/src/generated/agent.json` (meta-only build input for A's
 fixed agent). Limits: ≤16 skills, ≤64 files & ≤1 MiB per skill, ≤4 MiB per agent,
-instructions ≤64 KiB (`core/src/agent.js`). Zero-skill agents (e.g. `semantius-admin`) are
+instructions ≤64 KiB (`core/src/agent.js`). Zero-skill agents (no `skills/` folder) are
 valid — nothing is provisioned, the bundle still carries instructions/model.
+
+## Skill delivery to the model (backend B)
+
+Skill delivery has TWO legs on backend B, and both are required:
+
+- **Files on disk** — `provisionAgentSkills` extracts the bundle into
+  `/workspace/.agents/skills/` (eagerly at ingest, self-healed on every delivered
+  message). This makes skill resources actually runnable (bun/node scripts, reference
+  files) and feeds Flue's workspace-skill discovery when that works.
+- **Explicit catalog** — the bundle's SKILL.md frontmatter is parsed into
+  `{name, description}` entries (`skillCatalogFromBundle`, `core/src/skill-catalog.js`)
+  that ride the creation seed (frontend `AGENT_SEEDS`) and the stored agent meta;
+  `backend-b/src/agents/main.ts` mounts each entry with `useSkill()`, whose
+  instructions point at the on-disk SKILL.md. This is what guarantees the model SEES
+  the skills in its system-prompt "Available Skills" section.
+
+Why the second leg exists: Flue discovers workspace skills once at session init and
+caches the catalog for the conversation. On B, fully provisioned sessions still
+composed system prompts with an EMPTY catalog (verified 2026-07-23 on the
+2.x nightly: the Braintrust-logged system prompt had no skills section while the
+deterministic skill-check proved the same container held all 70 files, and the SDK
+`exists()` probe — surfaced as `sdkExists` in the skill-check response — returned
+true when tested moments later). Backend A never hits this because its skills are
+baked into the image and exist at container boot; the pre-nightly "activate_skill →
+read → bash" A/B result in Verified results predates this regression. Catalog
+descriptions are truncated to 1024 chars (Flue's SkillDefinition cap). When
+workspace discovery does find the disk copy, the discovered skill wins the
+name-merge over the mounted definition — same content either way.
+
+Observability: both backends log every llm span to Braintrust with the EXACT system
+prompt sent in span metadata `flue.system_prompt` (messages are the span input).
+Check there first when the model behaves as if instructions or skills are missing.
 
 ## Prerequisites
 
@@ -103,6 +135,11 @@ pnpm dev:frontend      # http://localhost:5173  (talks to localhost:3583/3584 in
 
 ```bash
 pnpm deploy            # bundle + deploy A + B + frontend, in order
+pnpm deploy:agents     # bundle + deploy:frontend — ships agents/ content changes to
+                       # backend B (bundles ride the frontend build; B's worker is the
+                       # generic host and needs no redeploy). NEW sessions only; if
+                       # hoth-trip-planner changed, backend A needs deploy:a too, and the
+                       # GitHub channel's agent:github-default KV key its manual re-upload.
 # or individually:
 pnpm deploy:a          # vite build + wrangler deploy backend A (creates its container app)
 pnpm deploy:b          # vite build + wrangler deploy backend B
@@ -145,12 +182,18 @@ Two layers:
 - **Per-agent override** (`agent.jsonc`): optional `model` and `model_base_url`. The
   bundler normalizes `model` with a prefix rule — a first path segment that is a known
   provider (`openrouter`, `custom`, `cloudflare`) is kept as-is, anything else gets
-  `openrouter/` prepended (so `"deepseek/deepseek-v4-flash"` means
-  `openrouter/deepseek/deepseek-v4-flash`). At runtime `agentModelSpecifier()`
-  (`src/llm.ts`) registers a dedicated one-model Pi provider `agent-<name>` when an agent
-  overrides anything; with no override the env default applies. `model_base_url` overrides
-  transport only — auth is always the worker-wide `LLM_API_KEY` secret. Backend A applies
-  its fixed agent's override at build time; backend B per session from the bundle.
+  `openrouter/` prepended (so `"tencent/hy3"` means `openrouter/tencent/hy3`). At runtime
+  `agentModelSpecifier()` (`src/llm.ts`) resolves the override **metadata-preservingly**,
+  because Flue trusts a provider's catalog metadata blindly (`reasoning` gates thinking,
+  `contextWindow` sets the compaction threshold, `maxTokens` caps output): an openrouter
+  model that Pi's catalog knows keeps its `openrouter/...` specifier and full catalog
+  entry (e.g. `tencent/hy3` 256k context, `xiaomi/mimo-v2.5-pro` 1M context — differing
+  per-agent context windows come straight from the catalog); with `model_base_url` set,
+  a dedicated one-model provider `agent-<name>` reuses the catalog entry with only the
+  transport swapped; only a catalog miss falls back to a conservative placeholder entry
+  (no reasoning, 128k window). `model_base_url` overrides transport only — auth is always
+  the worker-wide `LLM_API_KEY` secret. Backend A applies its fixed agent's override at
+  build time; backend B per session from the bundle.
 
 ## Egress (per-agent proxy_whitelist)
 
@@ -196,6 +239,15 @@ are enumerable only via the `session:<id>` KV records each backend writes at
 provision/ingest (`putSessionIndex`) — sessions created before that index existed don't
 appear. Conversation *content* is streamed by the frontend via the Flue conversation
 client, not an admin endpoint.
+
+Token/cost usage in the Raw JSON view: Flue v2 dropped the beta's per-message
+`metadata.usage` from the conversation read, so both agents re-attach it via
+`useResponseFinish` (one aggregate per response, openrouter specifiers only — which
+includes catalog-known model overrides, since `llm.ts` keeps their `openrouter/...`
+specifier; the placeholder/custom catalogs register zero rates and would report $0). The cost is
+pi-ai's model-catalog computation, not OpenRouter's billed amount: OpenRouter now returns
+actual cost inline on every response (`usage.cost`, last SSE chunk when streaming — the old
+follow-up `/generation` request is obsolete), but pi-ai discards that field.
 
 ## GitHub channel (backend B)
 
@@ -250,6 +302,13 @@ edit files). Per backend: `braintrust@3.17.0` (pinned) + `src/braintrust.ts` (th
 
 Verify: send a chat turn, then check the project logs — llm spans should be named
 `llm:<model>` and carry `prompt_tokens` / `completion_tokens` / `estimated_cost` metrics.
+
+- **Per-session rollup**: Braintrust traces are one-per-message (the atomic-completion
+  unit); the session view is a reassembly over `metadata."flue.instance_id"`, which
+  every span carries. `pnpm sessions` (scripts/session-costs.mjs) prints one row per
+  session — messages, llm/tool calls, tokens, cost, wall time — over the last 24h
+  (`--hours N`); `--session <id>` adds that session's per-message breakdown. In the
+  Logs UI, filter by `metadata.flue.instance_id` to read one session's traces in order.
 
 ## Acceptance
 

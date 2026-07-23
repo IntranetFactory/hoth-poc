@@ -33,6 +33,7 @@ import {
   listCollectionRecords,
   readCollectionRecord,
   provisionAgentSkills,
+  SKILLS_DIR,
   putEgressWhitelist,
   removeEgressWhitelist,
   resolveSandboxBinding,
@@ -185,8 +186,19 @@ app.post('/sessions/:id/skill-check', async (c) => {
     await putEgressWhitelist(c.env.STORE, namespace.idFromName(id).toString(), bundle.proxyWhitelist ?? []);
   }
 
+  // Diagnostic: Flue's cloudflare adapter gates skill discovery on the SDK's
+  // exists() RPC (container-server /api/exists), while every find/stat-based
+  // op here uses shell exec. Surfacing the RPC's answer for the skills dir
+  // makes an empty skill catalog attributable when the files provably exist.
+  let sdkExists: unknown;
+  try {
+    sdkExists = (await sandbox.exists(SKILLS_DIR)).exists;
+  } catch (err) {
+    sdkExists = `error: ${String(err)}`;
+  }
+
   const result = await sandbox.exec(command, { cwd: '/workspace' });
-  return c.json({ exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr, reconstructed });
+  return c.json({ exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr, reconstructed, sdkExists });
 });
 
 app.delete('/sessions/:id', async (c) => {

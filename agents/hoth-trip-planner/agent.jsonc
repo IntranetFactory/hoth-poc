@@ -1,7 +1,9 @@
 {
   "$schema": "../../core/agent.schema.json",
-  // instructions come from INSTRUCTIONS.md in this folder; model falls back to
-  // the backend's env-derived default (LLM_PROVIDER/LLM_MODEL).
+  // instructions come from INSTRUCTIONS.md in this folder.
+  // Bundler prefix rule makes this openrouter/tencent/hy3; Pi's catalog entry
+  // supplies the real metadata (reasoning-capable, 256k context window).
+  "model": "tencent/hy3",
   // The only egress this agent needs: the planner skill's opening-times.js
   // calls the (mock) Hoth Tourism API on this host — everything else is denied.
   "proxy_whitelist": [

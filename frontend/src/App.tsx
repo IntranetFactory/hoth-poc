@@ -28,6 +28,7 @@
  */
 import { useFlueAgent } from '@flue/react';
 import { createFlueClient } from '@flue/sdk';
+import { skillCatalogFromBundle } from '@hoth/core';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { AgentChat } from './AgentChat';
@@ -68,19 +69,25 @@ type AgentSeed = {
   instructions: string;
   model?: string;
   modelBaseUrl?: string;
+  /** Explicit skill catalog (name + description) so turn 1 mounts skills via useSkill(). */
+  skillCatalog?: Array<{ name: string; description: string }>;
 };
 const AGENT_SEEDS: Record<string, AgentSeed> = Object.fromEntries(
-  Object.values(AGENTS).map((b) => [
-    b.agentName,
-    {
-      agentName: b.agentName,
-      version: b.version,
-      baseImage: b.baseImage,
-      instructions: b.instructions,
-      ...(b.model ? { model: b.model } : {}),
-      ...(b.modelBaseUrl ? { modelBaseUrl: b.modelBaseUrl } : {}),
-    },
-  ]),
+  Object.values(AGENTS).map((b) => {
+    const skillCatalog = skillCatalogFromBundle(b);
+    return [
+      b.agentName,
+      {
+        agentName: b.agentName,
+        version: b.version,
+        baseImage: b.baseImage,
+        instructions: b.instructions,
+        ...(b.model ? { model: b.model } : {}),
+        ...(b.modelBaseUrl ? { modelBaseUrl: b.modelBaseUrl } : {}),
+        ...(skillCatalog.length > 0 ? { skillCatalog } : {}),
+      },
+    ];
+  }),
 );
 
 const BACKENDS = {

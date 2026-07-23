@@ -1,6 +1,9 @@
 {
-  "$schema": "../../core/agent.schema.json",
-  "instructions": "You are helping users to manage their Semantius data platform.",
+  "$schema": "../../core/agent.schema.json",  
+  // Bundler prefix rule makes this openrouter/xiaomi/mimo-v2.5-pro; Pi's
+  // catalog entry supplies the real metadata (reasoning-capable, 1M context
+  // window — this agent needs well over 300k).
+  "model": "xiaomi/mimo-v2.5-pro",
   "proxy_whitelist": [
     "*.semantius.ai",
     "www.semantius.com"
